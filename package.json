@@ -42,7 +42,7 @@
   },
   "type": "module",
   "bin": {
-    "ragscope": "./dist/bin/ragscope.js"
+    "ragscope": "dist/bin/ragscope.js"
   },
   "files": [
     "dist"
