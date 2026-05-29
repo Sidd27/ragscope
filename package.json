@@ -1,7 +1,37 @@
 {
   "name": "ragscope",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Instant RAG pipeline audit — instrument once, get scored results in your terminal",
+  "keywords": [
+    "rag",
+    "llm",
+    "observability",
+    "opentelemetry",
+    "otlp",
+    "langfuse",
+    "retrieval",
+    "audit",
+    "debugging",
+    "vector-search",
+    "langchain",
+    "llamaindex"
+  ],
+  "author": "Siddharth Pandey <pandeysiddharth27@gmail.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sidd27/ragscope.git"
+  },
+  "homepage": "https://github.com/Sidd27/ragscope#readme",
+  "bugs": {
+    "url": "https://github.com/Sidd27/ragscope/issues"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "ragscope": "./dist/bin/ragscope.js"
@@ -10,7 +40,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin/ragscope.js",
     "prepublishOnly": "pnpm run build",
     "dev": "tsx watch bin/ragscope.ts",
     "test": "vitest run",
