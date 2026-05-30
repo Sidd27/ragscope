@@ -50,6 +50,7 @@
   "scripts": {
     "build": "tsc && chmod +x dist/bin/ragscope.js",
     "prepublishOnly": "pnpm run build",
+    "release": "node scripts/release.js",
     "dev": "tsx watch bin/ragscope.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
