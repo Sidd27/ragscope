@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report a bug!
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Trace source
+      options:
+        - OTel / OTLP (manual instrumentation)
+        - TraceAI / Traceloop
+        - Vercel AI SDK
+        - Phoenix (Arize)
+        - Langfuse
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `npx ragscope start`
+        2. Send a trace with ...
+        3. See error
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      placeholder: "e.g. 20.11.0"
+    validations:
+      required: true
+
+  - type: input
+    id: ragscope
+    attributes:
+      label: RAGScope version
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true

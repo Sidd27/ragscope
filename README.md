@@ -1,6 +1,18 @@
+<div align="center">
+
 # RAGScope
 
-**Lighthouse for RAG pipelines.** Instrument your pipeline, run `npx ragscope start`, fire test queries, and get an instant PASS/WARN/FAIL audit score in the terminal — before you ship.
+**Lighthouse for RAG pipelines.**
+Get PASS/WARN/FAIL audit scores in your terminal before you ship.
+
+[![npm version](https://img.shields.io/npm/v/ragscope.svg?style=flat-square)](https://www.npmjs.com/package/ragscope)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg?style=flat-square)](https://nodejs.org)
+[![CI](https://github.com/Sidd27/ragscope/actions/workflows/ci.yml/badge.svg)](https://github.com/Sidd27/ragscope/actions/workflows/ci.yml)
+
+</div>
+
+---
 
 ```
  PASS  84/100  my-rag-app  "what is RAG?"
@@ -10,48 +22,66 @@
        ✗ precision:30  ✗ efficiency:45  ~ redundancy:70  ✓ coverage:100
        → Reduce TOP_K 10→5  · 2 near-duplicate chunks detected
 
- ─────────────────────────────────────────────
+ ─────────────────────────────────────────────────────────────
  Session  2 queries · avg 72/100  ↑ improving
 ```
 
 ---
 
-## Install
+## The problem
 
-```bash
-npx ragscope start
-```
+You build a RAG pipeline. It looks fine in demos. You ship it. Users complain the answers are wrong or vague — but nothing in your logs tells you why.
 
-Starts an OTLP receiver on **port 4321**. Point your pipeline's OTel exporter there and run queries — scores appear in the terminal as each trace arrives.
+The real issue is usually invisible: too many chunks retrieved, half of them never reaching the LLM, near-duplicate content eating your context window, no similarity scores to optimize against. RAGScope makes all of this visible — scored, labelled, and actionable — in your terminal, before you ship.
 
 ---
 
-## What it scores
+## Quick start
 
-Every query gets four sub-scores combined into an overall 0–100:
+```bash
+# 1. Start RAGScope (no install needed)
+npx ragscope start
+
+# 2. Point your pipeline's OTel exporter at it
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4321
+
+# 3. Run your test queries — scores appear instantly
+```
+
+That's it. No config files, no accounts, no data leaving your machine.
+
+---
+
+## How it scores
+
+Every query gets four sub-scores combined into a single 0–100:
 
 | Sub-score | Weight | What it measures |
 |---|---|---|
-| **Retrieval Precision** | 40% | Fraction of retrieved chunks that reached the LLM |
+| **Retrieval Precision** | 40% | Fraction of retrieved chunks that actually reached the LLM |
 | **Context Efficiency** | 30% | Token waste on chunks the LLM never saw |
-| **Redundancy** | 20% | Near-duplicate chunks eating context window |
-| **Score Coverage** | 10% | Whether chunks have similarity scores for optimization |
+| **Redundancy** | 20% | Near-duplicate chunks eating your context window |
+| **Score Coverage** | 10% | Whether chunks carry similarity scores for optimization |
 
-- **PASS** ≥ 75 — green
-- **WARN** 50–74 — yellow
-- **FAIL** < 50 — red
+| Label | Score | Meaning |
+|---|---|---|
+| **PASS** | ≥ 75 | Retrieval pipeline is healthy |
+| **WARN** | 50–74 | Issues detected — check recommendations |
+| **FAIL** | < 50 | Significant retrieval problems before ship |
 
-Add `--verbose` for a full breakdown with recommendations per query.
+Add `--verbose` for a full per-query breakdown with specific recommendations.
 
 ---
 
 ## Integrations
 
-### Any OTel-compatible tool
+RAGScope is source-agnostic. Traces arrive via two paths.
 
-Set your exporter URL to `http://localhost:4321/v1/traces` — no other changes:
+### Path 1 — Any OTel-compatible tool
 
-**TraceAI / Traceloop** (auto-instruments LangChain, LlamaIndex, OpenAI, Pinecone, Qdrant…)
+One line change: set the OTLP exporter URL to `http://localhost:4321/v1/traces`.
+
+**TraceAI / Traceloop** (auto-instruments LangChain, LlamaIndex, OpenAI, Pinecone, Qdrant, Cohere…)
 
 ```typescript
 import { NodeSDK } from '@opentelemetry/sdk-node'
@@ -77,6 +107,8 @@ const sdk = new NodeSDK({
 sdk.start()
 ```
 
+**Phoenix (Arize) / OpenLLMetry** — set `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4321` or `TRACELOOP_BASE_URL=http://localhost:4321`.
+
 **Manual OpenTelemetry**
 
 ```typescript
@@ -90,21 +122,24 @@ const sdk = new NodeSDK({
 sdk.start()
 
 const tracer = trace.getTracer('my-rag-app')
+
 const span = tracer.startSpan('qdrant.query')
 span.setAttribute('gen_ai.operation.name', 'retrieve')
 span.setAttribute('gen_ai.retrieval.documents', JSON.stringify(docs))
 span.end()
 ```
 
-### Langfuse
+### Path 2 — Langfuse
 
-Set two env vars — RAGScope polls every 30 seconds automatically:
+Set two env vars — RAGScope polls every 30 seconds, zero code changes:
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-... \
 LANGFUSE_SECRET_KEY=sk-lf-... \
 npx ragscope start
 ```
+
+> **Coming soon:** LangSmith · Helicone adapters. [Open an issue](https://github.com/Sidd27/ragscope/issues) to vote or contribute.
 
 ---
 
@@ -122,14 +157,38 @@ npx ragscope start [options]
 
 ## Works with
 
-- **Vector stores**: Qdrant · Chroma · Pinecone · Weaviate · pgvector
-- **LLM frameworks**: LangChain · LlamaIndex · Vercel AI SDK · custom
-- **Models**: OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider
-- **Rerankers**: Cohere Rerank · any span with `gen_ai.operation.name = rerank`
-- **Ingestion sources**: Any OTel exporter · Langfuse · (LangSmith, Helicone — coming soon)
+| Category | Tools |
+|---|---|
+| **Vector stores** | Qdrant · Chroma · Pinecone · Weaviate · pgvector |
+| **LLM frameworks** | LangChain · LlamaIndex · Vercel AI SDK · custom |
+| **Models** | OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider |
+| **Rerankers** | Cohere Rerank · any span with `gen_ai.operation.name = rerank` |
+| **Ingestion** | Any OTel exporter · Langfuse · _(LangSmith, Helicone coming soon)_ |
+
+---
+
+## Why not just use Langfuse / Phoenix / Arize?
+
+Those are excellent **production monitoring** tools — they record what happened after you ship.
+
+RAGScope is a **pre-ship quality gate** — like ESLint or Lighthouse, you run it during development to catch retrieval problems before they reach users. Different job, smaller footprint, zero cloud dependency.
+
+---
+
+## Contributing
+
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+
+**Good first issues:** adding a LangSmith or Helicone ingestion adapter, improving scoring heuristics, adding test coverage.
 
 ---
 
 ## Privacy
 
-All data stays on your machine. No telemetry, no cloud, no accounts.
+All data stays on your machine. No telemetry, no cloud, no accounts required.
+
+---
+
+## License
+
+[Apache 2.0](LICENSE) — © 2026 Siddharth Pandey
