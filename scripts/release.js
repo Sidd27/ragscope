@@ -6,7 +6,7 @@
 //   pnpm release 1.2.3        → explicit version
 //
 // Bumps package.json, commits, tags, pushes, and creates a draft GitHub release.
-// Pushing the tag triggers the npm publish workflow (.github/workflows/publish.yml).
+// npm publish is triggered when you publish the draft release on GitHub (not on tag push).
 
 import { execSync, spawnSync } from 'child_process';
 import { readFileSync, writeFileSync } from 'fs';
