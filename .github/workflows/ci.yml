@@ -37,9 +37,6 @@ jobs:
             pnpm install --frozen-lockfile
           fi
 
-      - name: Rebuild native bindings
-        run: pnpm rebuild better-sqlite3
-
       - name: Typecheck
         run: pnpm typecheck
 

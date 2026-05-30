@@ -33,9 +33,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Rebuild native bindings
-        run: pnpm rebuild better-sqlite3
-
       - name: Publish
         run: npm publish --provenance --access public
         env:
