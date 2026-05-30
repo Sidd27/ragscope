@@ -175,11 +175,39 @@ RAGScope is a **pre-ship quality gate** — like ESLint or Lighthouse, you run i
 
 ---
 
+## Roadmap
+
+### Now (v0.1.x)
+
+- [x] OTLP ingestion — works with any OTel-compatible source
+- [x] Langfuse polling adapter
+- [x] Four sub-scores: precision, efficiency, redundancy, coverage
+- [x] PASS / WARN / FAIL per query with rolling session average
+- [x] `--verbose` flag for full breakdown + recommendations
+
+### Next (v0.2)
+
+- [ ] **LangSmith adapter** — poll runs via LangSmith API, zero code changes
+- [ ] **Helicone adapter** — fetch requests via Helicone API
+- [ ] **Langfuse webhooks** — real-time instead of 30s polling
+- [ ] **Audit report export** — `npx ragscope report` writes a Markdown/JSON summary you can commit or share
+
+### Later
+
+- [ ] **Compare mode** — `npx ragscope compare v1 v2` diffs two pipeline versions side-by-side
+- [ ] **Python support** — native Python instrumentation helpers
+- [ ] **Threshold config** — `.ragscope.json` to set custom PASS/WARN/FAIL thresholds per project
+- [ ] **Span-level drill-down** — `--trace <id>` to inspect a single trace in detail
+
+> Vote on features or propose new ones by [opening an issue](https://github.com/Sidd27/ragscope/issues).
+
+---
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
 
-**Good first issues:** adding a LangSmith or Helicone ingestion adapter, improving scoring heuristics, adding test coverage.
+**Good first issues:** LangSmith adapter, Helicone adapter, audit report export, improving scoring heuristics.
 
 ---
 
