@@ -26,9 +26,9 @@ const prev = pkg.version;
 const [major, minor, patch] = prev.split('.').map(Number);
 
 let next;
-if (arg === 'patch')       next = `${major}.${minor}.${patch + 1}`;
-else if (arg === 'minor')  next = `${major}.${minor + 1}.0`;
-else if (arg === 'major')  next = `${major + 1}.0.0`;
+if (arg === 'patch') next = `${major}.${minor}.${patch + 1}`;
+else if (arg === 'minor') next = `${major}.${minor + 1}.0`;
+else if (arg === 'major') next = `${major + 1}.0.0`;
 else if (/^\d+\.\d+\.\d+$/.test(arg)) next = arg;
 else {
   console.error(`Invalid argument: "${arg}". Use patch, minor, major, or x.y.z`);
@@ -48,25 +48,33 @@ execSync(`git tag v${next}`, { stdio: 'inherit' });
 const prevTag = `v${prev}`;
 let commits;
 try {
-  commits = execSync(`git log ${prevTag}..HEAD --pretty=format:"%s" --no-merges`, { encoding: 'utf8' })
-    .trim().split('\n')
-    .filter(l => l && !l.startsWith('chore: release'));
+  commits = execSync(`git log ${prevTag}..HEAD --pretty=format:"%s" --no-merges`, {
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter((l) => l && !l.startsWith('chore: release'));
 } catch {
   commits = [];
 }
 
 const strip = (prefix, line) => line.replace(new RegExp(`^${prefix}:\\s*`), '');
 
-const features = commits.filter(l => l.startsWith('feat'));
-const fixes    = commits.filter(l => l.startsWith('fix'));
-const chores   = commits.filter(l => /^(chore|docs|refactor|perf|test)/.test(l));
-const other    = commits.filter(l => !l.startsWith('feat') && !l.startsWith('fix') && !/^(chore|docs|refactor|perf|test)/.test(l));
+const features = commits.filter((l) => l.startsWith('feat'));
+const fixes = commits.filter((l) => l.startsWith('fix'));
+const chores = commits.filter((l) => /^(chore|docs|refactor|perf|test)/.test(l));
+const other = commits.filter(
+  (l) =>
+    !l.startsWith('feat') && !l.startsWith('fix') && !/^(chore|docs|refactor|perf|test)/.test(l),
+);
 
 const sections = [];
-if (features.length) sections.push(`## What's New\n${features.map(l => `- ${strip('feat(\\w+)?', l)}`).join('\n')}`);
-if (fixes.length)    sections.push(`## Bug Fixes\n${fixes.map(l => `- ${strip('fix(\\w+)?', l)}`).join('\n')}`);
-if (chores.length)   sections.push(`## Maintenance\n${chores.map(l => `- ${l}`).join('\n')}`);
-if (other.length)    sections.push(`## Other\n${other.map(l => `- ${l}`).join('\n')}`);
+if (features.length)
+  sections.push(`## What's New\n${features.map((l) => `- ${strip('feat(\\w+)?', l)}`).join('\n')}`);
+if (fixes.length)
+  sections.push(`## Bug Fixes\n${fixes.map((l) => `- ${strip('fix(\\w+)?', l)}`).join('\n')}`);
+if (chores.length) sections.push(`## Maintenance\n${chores.map((l) => `- ${l}`).join('\n')}`);
+if (other.length) sections.push(`## Other\n${other.map((l) => `- ${l}`).join('\n')}`);
 
 const notes = sections.length ? sections.join('\n\n') : `Release v${next}`;
 
@@ -81,8 +89,18 @@ const notesFile = join(tmpdir(), `ragscope-release-${next}.md`);
 writeFileSync(notesFile, notes, 'utf8');
 
 const ghResult = spawnSync(
-  'gh', ['release', 'create', `v${next}`, '--draft', '--title', `RAGScope v${next}`, '--notes-file', notesFile],
-  { stdio: 'inherit' }
+  'gh',
+  [
+    'release',
+    'create',
+    `v${next}`,
+    '--draft',
+    '--title',
+    `RAGScope v${next}`,
+    '--notes-file',
+    notesFile,
+  ],
+  { stdio: 'inherit' },
 );
 
 if (ghResult.status === 0) {

@@ -48,8 +48,8 @@ The easiest high-value contribution. Implement this interface in `src/ingestion/
 
 ```typescript
 export interface IngestionAdapter {
-  name: string
-  poll(db: Db, onTrace?: (traceId: string) => void): Promise<void>
+  name: string;
+  poll(db: Db, onTrace?: (traceId: string) => void): Promise<void>;
 }
 ```
 

@@ -1,13 +1,13 @@
-import Database from 'better-sqlite3'
-import { drizzle } from 'drizzle-orm/better-sqlite3'
-import { traces, spans, chunks } from './schema.js'
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { traces, spans, chunks } from './schema.js';
 
-export type Db = ReturnType<typeof createDb>
+export type Db = ReturnType<typeof createDb>;
 
 export function createDb(dbPath = ':memory:') {
-  const sqlite = new Database(dbPath)
-  sqlite.pragma('journal_mode = WAL')
-  sqlite.pragma('foreign_keys = ON')
+  const sqlite = new Database(dbPath);
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('foreign_keys = ON');
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS traces (
@@ -57,7 +57,7 @@ export function createDb(dbPath = ':memory:') {
       overlap_with_next REAL,
       score_missing INTEGER NOT NULL DEFAULT 0
     );
-  `)
+  `);
 
-  return drizzle(sqlite, { schema: { traces, spans, chunks } })
+  return drizzle(sqlite, { schema: { traces, spans, chunks } });
 }

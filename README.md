@@ -56,18 +56,18 @@ That's it. No config files, no accounts, no data leaving your machine.
 
 Every query gets four sub-scores combined into a single 0–100:
 
-| Sub-score | Weight | What it measures |
-|---|---|---|
-| **Retrieval Precision** | 40% | Fraction of retrieved chunks that actually reached the LLM |
-| **Context Efficiency** | 30% | Token waste on chunks the LLM never saw |
-| **Redundancy** | 20% | Near-duplicate chunks eating your context window |
-| **Score Coverage** | 10% | Whether chunks carry similarity scores for optimization |
+| Sub-score               | Weight | What it measures                                           |
+| ----------------------- | ------ | ---------------------------------------------------------- |
+| **Retrieval Precision** | 40%    | Fraction of retrieved chunks that actually reached the LLM |
+| **Context Efficiency**  | 30%    | Token waste on chunks the LLM never saw                    |
+| **Redundancy**          | 20%    | Near-duplicate chunks eating your context window           |
+| **Score Coverage**      | 10%    | Whether chunks carry similarity scores for optimization    |
 
-| Label | Score | Meaning |
-|---|---|---|
-| **PASS** | ≥ 75 | Retrieval pipeline is healthy |
-| **WARN** | 50–74 | Issues detected — check recommendations |
-| **FAIL** | < 50 | Significant retrieval problems before ship |
+| Label    | Score | Meaning                                    |
+| -------- | ----- | ------------------------------------------ |
+| **PASS** | ≥ 75  | Retrieval pipeline is healthy              |
+| **WARN** | 50–74 | Issues detected — check recommendations    |
+| **FAIL** | < 50  | Significant retrieval problems before ship |
 
 Add `--verbose` for a full per-query breakdown with specific recommendations.
 
@@ -84,27 +84,27 @@ One line change: set the OTLP exporter URL to `http://localhost:4321/v1/traces`.
 **TraceAI / Traceloop** (auto-instruments LangChain, LlamaIndex, OpenAI, Pinecone, Qdrant, Cohere…)
 
 ```typescript
-import { NodeSDK } from '@opentelemetry/sdk-node'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
-import { instrument } from '@traceloop/node-server-sdk'
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { instrument } from '@traceloop/node-server-sdk';
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
-})
-sdk.start()
-instrument()
+});
+sdk.start();
+instrument();
 ```
 
 **Vercel AI SDK**
 
 ```typescript
-import { NodeSDK } from '@opentelemetry/sdk-node'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
-})
-sdk.start()
+});
+sdk.start();
 ```
 
 **Phoenix (Arize) / OpenLLMetry** — set `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4321` or `TRACELOOP_BASE_URL=http://localhost:4321`.
@@ -112,21 +112,21 @@ sdk.start()
 **Manual OpenTelemetry**
 
 ```typescript
-import { trace } from '@opentelemetry/api'
-import { NodeSDK } from '@opentelemetry/sdk-node'
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
+import { trace } from '@opentelemetry/api';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 
 const sdk = new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
-})
-sdk.start()
+});
+sdk.start();
 
-const tracer = trace.getTracer('my-rag-app')
+const tracer = trace.getTracer('my-rag-app');
 
-const span = tracer.startSpan('qdrant.query')
-span.setAttribute('gen_ai.operation.name', 'retrieve')
-span.setAttribute('gen_ai.retrieval.documents', JSON.stringify(docs))
-span.end()
+const span = tracer.startSpan('qdrant.query');
+span.setAttribute('gen_ai.operation.name', 'retrieve');
+span.setAttribute('gen_ai.retrieval.documents', JSON.stringify(docs));
+span.end();
 ```
 
 ### Path 2 — Langfuse
@@ -157,13 +157,13 @@ npx ragscope start [options]
 
 ## Works with
 
-| Category | Tools |
-|---|---|
-| **Vector stores** | Qdrant · Chroma · Pinecone · Weaviate · pgvector |
-| **LLM frameworks** | LangChain · LlamaIndex · Vercel AI SDK · custom |
-| **Models** | OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider |
-| **Rerankers** | Cohere Rerank · any span with `gen_ai.operation.name = rerank` |
-| **Ingestion** | Any OTel exporter · Langfuse · _(LangSmith, Helicone coming soon)_ |
+| Category           | Tools                                                                  |
+| ------------------ | ---------------------------------------------------------------------- |
+| **Vector stores**  | Qdrant · Chroma · Pinecone · Weaviate · pgvector                       |
+| **LLM frameworks** | LangChain · LlamaIndex · Vercel AI SDK · custom                        |
+| **Models**         | OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider |
+| **Rerankers**      | Cohere Rerank · any span with `gen_ai.operation.name = rerank`         |
+| **Ingestion**      | Any OTel exporter · Langfuse · _(LangSmith, Helicone coming soon)_     |
 
 ---
 

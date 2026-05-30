@@ -1,31 +1,35 @@
-import { randomUUID } from 'crypto'
-import type { ParsedTrace, ParsedSpan, RagTrace, RagSpan, RagChunk } from '../types.js'
-import { normalizeScores } from './normalizer.js'
-import { countTokens } from './tokenizer.js'
-import { annotateChunkBoundaries } from './boundaries.js'
-import { applyRerankerResults } from './reranker.js'
-import { insertTrace, insertSpans, insertChunks } from '../db/queries.js'
-import type { Db } from '../db/index.js'
+import { randomUUID } from 'crypto';
+import type { ParsedTrace, ParsedSpan, RagTrace, RagSpan, RagChunk } from '../types.js';
+import { normalizeScores } from './normalizer.js';
+import { countTokens } from './tokenizer.js';
+import { annotateChunkBoundaries } from './boundaries.js';
+import { applyRerankerResults } from './reranker.js';
+import { insertTrace, insertSpans, insertChunks } from '../db/queries.js';
+import type { Db } from '../db/index.js';
 
 function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[] {
-  const llmPrompts = llmSpans.map(s => s.prompt).filter((p): p is string => !!p)
-  if (llmPrompts.length === 0) return chunks
+  const llmPrompts = llmSpans.map((s) => s.prompt).filter((p): p is string => !!p);
+  if (llmPrompts.length === 0) return chunks;
 
-  let position = 0
-  return chunks.map(chunk => {
-    if (!chunk.content) return chunk
-    const inContext = llmPrompts.some(p => p.includes(chunk.content!))
+  let position = 0;
+  return chunks.map((chunk) => {
+    if (!chunk.content) return chunk;
+    const inContext = llmPrompts.some((p) => p.includes(chunk.content!));
     if (inContext) {
-      return { ...chunk, inContext: true, contextPosition: position++ }
+      return { ...chunk, inContext: true, contextPosition: position++ };
     }
-    return { ...chunk, inContext: false, contextPosition: null }
-  })
+    return { ...chunk, inContext: false, contextPosition: null };
+  });
 }
 
-export async function ingestTrace(db: Db, parsed: ParsedTrace, source: RagTrace['source']): Promise<void> {
-  const rootSpan = parsed.spans.find(s => !s.parentSpanId) ?? parsed.spans[0]
-  const allChunks: RagChunk[] = []
-  const ragSpans: RagSpan[] = []
+export async function ingestTrace(
+  db: Db,
+  parsed: ParsedTrace,
+  source: RagTrace['source'],
+): Promise<void> {
+  const rootSpan = parsed.spans.find((s) => !s.parentSpanId) ?? parsed.spans[0];
+  const allChunks: RagChunk[] = [];
+  const ragSpans: RagSpan[] = [];
 
   for (const span of parsed.spans) {
     ragSpans.push({
@@ -42,14 +46,14 @@ export async function ingestTrace(db: Db, parsed: ParsedTrace, source: RagTrace[
       system: span.system ?? null,
       inputTokens: span.inputTokens ?? null,
       outputTokens: span.outputTokens ?? null,
-    })
+    });
 
     if (span.documents && span.documents.length > 0) {
-      const normalized = normalizeScores(span.documents, span.system)
+      const normalized = normalizeScores(span.documents, span.system);
 
       for (let rank = 0; rank < normalized.length; rank++) {
-        const nd = normalized[rank]
-        const content = nd.content ?? null
+        const nd = normalized[rank];
+        const content = nd.content ?? null;
 
         allChunks.push({
           id: randomUUID(),
@@ -68,24 +72,24 @@ export async function ingestTrace(db: Db, parsed: ParsedTrace, source: RagTrace[
           contextPosition: null,
           overlapWithNext: null,
           scoreMissing: nd.scoreRaw === 0 && source === 'langfuse',
-        })
+        });
       }
     }
   }
 
-  const llmSpans = parsed.spans.filter(s => s.kind === 'LLM')
-  const rerankerSpans = parsed.spans.filter(s => s.kind === 'RERANKER')
-  const withContext = assembleContext(allChunks, llmSpans)
-  const { chunks: withReranked } = applyRerankerResults(withContext, rerankerSpans)
-  const withBoundaries = annotateChunkBoundaries(withReranked)
+  const llmSpans = parsed.spans.filter((s) => s.kind === 'LLM');
+  const rerankerSpans = parsed.spans.filter((s) => s.kind === 'RERANKER');
+  const withContext = assembleContext(allChunks, llmSpans);
+  const { chunks: withReranked } = applyRerankerResults(withContext, rerankerSpans);
+  const withBoundaries = annotateChunkBoundaries(withReranked);
 
-  const startTimes = parsed.spans.map(s => s.startTimeMs)
-  const endTimes = parsed.spans.map(s => s.endTimeMs)
-  const minStart = Math.min(...startTimes)
-  const maxEnd = Math.max(...endTimes)
+  const startTimes = parsed.spans.map((s) => s.startTimeMs);
+  const endTimes = parsed.spans.map((s) => s.endTimeMs);
+  const minStart = Math.min(...startTimes);
+  const maxEnd = Math.max(...endTimes);
 
-  const querySpan = parsed.spans.find(s => s.kind === 'CHAIN' || s.kind === 'LLM')
-  const query = querySpan?.prompt ?? null
+  const querySpan = parsed.spans.find((s) => s.kind === 'CHAIN' || s.kind === 'LLM');
+  const query = querySpan?.prompt ?? null;
 
   const ragTrace: RagTrace = {
     id: parsed.traceId,
@@ -96,9 +100,9 @@ export async function ingestTrace(db: Db, parsed: ParsedTrace, source: RagTrace[
     spanCount: parsed.spans.length,
     chunkCount: withBoundaries.length,
     createdAt: rootSpan?.startTimeMs ?? Date.now(),
-  }
+  };
 
-  await insertTrace(db, ragTrace)
-  await insertSpans(db, ragSpans)
-  await insertChunks(db, withBoundaries)
+  await insertTrace(db, ragTrace);
+  await insertSpans(db, ragSpans);
+  await insertChunks(db, withBoundaries);
 }

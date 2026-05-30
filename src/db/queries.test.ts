@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { createDb } from './index.js'
-import { insertTrace, insertSpans, insertChunks, getTraces, getTraceById } from './queries.js'
-import type { RagTrace, RagSpan, RagChunk } from '../types.js'
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createDb } from './index.js';
+import { insertTrace, insertSpans, insertChunks, getTraces, getTraceById } from './queries.js';
+import type { RagTrace, RagSpan, RagChunk } from '../types.js';
 
 function makeTrace(overrides: Partial<RagTrace> = {}): RagTrace {
   return {
@@ -14,7 +14,7 @@ function makeTrace(overrides: Partial<RagTrace> = {}): RagTrace {
     chunkCount: 3,
     createdAt: Date.now(),
     ...overrides,
-  }
+  };
 }
 
 function makeSpan(overrides: Partial<RagSpan> = {}): RagSpan {
@@ -33,7 +33,7 @@ function makeSpan(overrides: Partial<RagSpan> = {}): RagSpan {
     inputTokens: null,
     outputTokens: null,
     ...overrides,
-  }
+  };
 }
 
 function makeChunk(overrides: Partial<RagChunk> = {}): RagChunk {
@@ -55,59 +55,59 @@ function makeChunk(overrides: Partial<RagChunk> = {}): RagChunk {
     overlapWithNext: null,
     scoreMissing: false,
     ...overrides,
-  }
+  };
 }
 
 describe('DB queries', () => {
-  let db: ReturnType<typeof createDb>
+  let db: ReturnType<typeof createDb>;
 
   beforeEach(() => {
-    db = createDb(':memory:')
-  })
+    db = createDb(':memory:');
+  });
 
   it('inserts and retrieves a trace', async () => {
-    await insertTrace(db, makeTrace())
-    const traces = await getTraces(db)
-    expect(traces).toHaveLength(1)
-    expect(traces[0].id).toBe('trace-001')
-    expect(traces[0].serviceName).toBe('test-app')
-  })
+    await insertTrace(db, makeTrace());
+    const traces = await getTraces(db);
+    expect(traces).toHaveLength(1);
+    expect(traces[0].id).toBe('trace-001');
+    expect(traces[0].serviceName).toBe('test-app');
+  });
 
   it('orders traces by createdAt descending', async () => {
-    await insertTrace(db, makeTrace({ id: 'trace-old', createdAt: 1000 }))
-    await insertTrace(db, makeTrace({ id: 'trace-new', createdAt: 9000 }))
-    const traces = await getTraces(db)
-    expect(traces[0].id).toBe('trace-new')
-    expect(traces[1].id).toBe('trace-old')
-  })
+    await insertTrace(db, makeTrace({ id: 'trace-old', createdAt: 1000 }));
+    await insertTrace(db, makeTrace({ id: 'trace-new', createdAt: 9000 }));
+    const traces = await getTraces(db);
+    expect(traces[0].id).toBe('trace-new');
+    expect(traces[1].id).toBe('trace-old');
+  });
 
   it('returns null for unknown traceId', async () => {
-    const result = await getTraceById(db, 'nonexistent')
-    expect(result).toBeNull()
-  })
+    const result = await getTraceById(db, 'nonexistent');
+    expect(result).toBeNull();
+  });
 
   it('retrieves trace with spans and chunks', async () => {
-    await insertTrace(db, makeTrace())
-    await insertSpans(db, [makeSpan()])
-    await insertChunks(db, [makeChunk()])
+    await insertTrace(db, makeTrace());
+    await insertSpans(db, [makeSpan()]);
+    await insertChunks(db, [makeChunk()]);
 
-    const result = await getTraceById(db, 'trace-001')
-    expect(result).not.toBeNull()
-    expect(result!.spans).toHaveLength(1)
-    expect(result!.chunks).toHaveLength(1)
-    expect(result!.chunks[0].chunkId).toBe('doc-1')
-  })
+    const result = await getTraceById(db, 'trace-001');
+    expect(result).not.toBeNull();
+    expect(result!.spans).toHaveLength(1);
+    expect(result!.chunks).toHaveLength(1);
+    expect(result!.chunks[0].chunkId).toBe('doc-1');
+  });
 
   it('ignores duplicate inserts gracefully', async () => {
-    const trace = makeTrace()
-    await insertTrace(db, trace)
-    await insertTrace(db, trace)
-    const traces = await getTraces(db)
-    expect(traces).toHaveLength(1)
-  })
+    const trace = makeTrace();
+    await insertTrace(db, trace);
+    await insertTrace(db, trace);
+    const traces = await getTraces(db);
+    expect(traces).toHaveLength(1);
+  });
 
   it('handles empty spans and chunks insert', async () => {
-    await expect(insertSpans(db, [])).resolves.toBeUndefined()
-    await expect(insertChunks(db, [])).resolves.toBeUndefined()
-  })
-})
+    await expect(insertSpans(db, [])).resolves.toBeUndefined();
+    await expect(insertChunks(db, [])).resolves.toBeUndefined();
+  });
+});

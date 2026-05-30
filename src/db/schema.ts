@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
 
 export const traces = sqliteTable('traces', {
   id: text('id').primaryKey(),
@@ -9,11 +9,13 @@ export const traces = sqliteTable('traces', {
   spanCount: integer('span_count').notNull().default(0),
   chunkCount: integer('chunk_count').notNull().default(0),
   createdAt: integer('created_at').notNull(),
-})
+});
 
 export const spans = sqliteTable('spans', {
   id: text('id').primaryKey(),
-  traceId: text('trace_id').notNull().references(() => traces.id),
+  traceId: text('trace_id')
+    .notNull()
+    .references(() => traces.id),
   parentSpanId: text('parent_span_id'),
   name: text('name').notNull(),
   kind: text('kind').notNull(),
@@ -27,12 +29,16 @@ export const spans = sqliteTable('spans', {
   outputTokens: integer('output_tokens'),
   rawAttributes: text('raw_attributes').notNull().default('[]'),
   prompt: text('prompt'),
-})
+});
 
 export const chunks = sqliteTable('chunks', {
   id: text('id').primaryKey(),
-  spanId: text('span_id').notNull().references(() => spans.id),
-  traceId: text('trace_id').notNull().references(() => traces.id),
+  spanId: text('span_id')
+    .notNull()
+    .references(() => spans.id),
+  traceId: text('trace_id')
+    .notNull()
+    .references(() => traces.id),
   chunkId: text('chunk_id').notNull(),
   content: text('content'),
   scoreRaw: real('score_raw'),
@@ -46,4 +52,4 @@ export const chunks = sqliteTable('chunks', {
   contextPosition: integer('context_position'),
   overlapWithNext: real('overlap_with_next'),
   scoreMissing: integer('score_missing', { mode: 'boolean' }).notNull().default(false),
-})
+});

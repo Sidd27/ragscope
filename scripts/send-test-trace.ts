@@ -4,26 +4,38 @@
  * Usage: tsx scripts/send-test-trace.ts [--url http://localhost:4321]
  */
 
-const args = process.argv.slice(2)
-const urlIdx = args.indexOf('--url')
-const BASE_URL = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : 'http://localhost:4321'
+const args = process.argv.slice(2);
+const urlIdx = args.indexOf('--url');
+const BASE_URL = urlIdx !== -1 && args[urlIdx + 1] ? args[urlIdx + 1] : 'http://localhost:4321';
 
 function nano(ms: number): string {
-  return String(BigInt(ms) * 1_000_000n)
+  return String(BigInt(ms) * 1_000_000n);
 }
 
-const now = Date.now()
-const traceId = `test-trace-${Date.now().toString(16)}`
-const chainSpanId = 'span-chain-001'
-const embedSpanId = 'span-embed-002'
-const retrieverSpanId = 'span-retriever-003'
-const llmSpanId = 'span-llm-004'
+const now = Date.now();
+const traceId = `test-trace-${Date.now().toString(16)}`;
+const chainSpanId = 'span-chain-001';
+const embedSpanId = 'span-embed-002';
+const retrieverSpanId = 'span-retriever-003';
+const llmSpanId = 'span-llm-004';
 
 const docs = [
-  { id: 'doc-paris-1', score: 0.92, content: 'Paris is the capital city of France, known for the Eiffel Tower.' },
-  { id: 'doc-paris-2', score: 0.85, content: 'France is a country in Western Europe. Its capital is Paris.' },
-  { id: 'doc-paris-3', score: 0.71, content: 'The Louvre Museum is located in Paris and houses the Mona Lisa.' },
-]
+  {
+    id: 'doc-paris-1',
+    score: 0.92,
+    content: 'Paris is the capital city of France, known for the Eiffel Tower.',
+  },
+  {
+    id: 'doc-paris-2',
+    score: 0.85,
+    content: 'France is a country in Western Europe. Its capital is Paris.',
+  },
+  {
+    id: 'doc-paris-3',
+    score: 0.71,
+    content: 'The Louvre Museum is located in Paris and houses the Mona Lisa.',
+  },
+];
 
 const payload = {
   resourceSpans: [
@@ -119,30 +131,30 @@ const payload = {
       ],
     },
   ],
-}
+};
 
 async function main() {
-  console.log(`Sending test trace to ${BASE_URL}/v1/traces`)
-  console.log(`Trace ID: ${traceId}`)
+  console.log(`Sending test trace to ${BASE_URL}/v1/traces`);
+  console.log(`Trace ID: ${traceId}`);
 
   const res = await fetch(`${BASE_URL}/v1/traces`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
-  })
+  });
 
   if (!res.ok) {
-    const text = await res.text()
-    console.error(`Error ${res.status}: ${text}`)
-    process.exit(1)
+    const text = await res.text();
+    console.error(`Error ${res.status}: ${text}`);
+    process.exit(1);
   }
 
-  const body = await res.json()
-  console.log('Response:', JSON.stringify(body))
-  console.log(`\nView trace at: ${BASE_URL.replace(':4321', ':3000')}/traces/${traceId}/`)
+  const body = await res.json();
+  console.log('Response:', JSON.stringify(body));
+  console.log(`\nView trace at: ${BASE_URL.replace(':4321', ':3000')}/traces/${traceId}/`);
 }
 
-main().catch(err => {
-  console.error(err)
-  process.exit(1)
-})
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
