@@ -1,15 +1,14 @@
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { traces, spans, chunks } from './schema.js';
+import { DatabaseSync } from 'node:sqlite';
 
-export type Db = ReturnType<typeof createDb>;
+export type Db = DatabaseSync;
 
-export function createDb(dbPath = ':memory:') {
-  const sqlite = new Database(dbPath);
-  sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
+export function createDb(dbPath = ':memory:'): Db {
+  const db = new DatabaseSync(dbPath);
 
-  sqlite.exec(`
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS traces (
       id TEXT PRIMARY KEY,
       service_name TEXT NOT NULL,
@@ -59,5 +58,5 @@ export function createDb(dbPath = ':memory:') {
     );
   `);
 
-  return drizzle(sqlite, { schema: { traces, spans, chunks } });
+  return db;
 }

@@ -106,8 +106,8 @@ describe('DB queries', () => {
     expect(traces).toHaveLength(1);
   });
 
-  it('handles empty spans and chunks insert', async () => {
-    await expect(insertSpans(db, [])).resolves.toBeUndefined();
-    await expect(insertChunks(db, [])).resolves.toBeUndefined();
+  it('handles empty spans and chunks insert', () => {
+    expect(() => insertSpans(db, [])).not.toThrow();
+    expect(() => insertChunks(db, [])).not.toThrow();
   });
 });
