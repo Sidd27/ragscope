@@ -35,7 +35,7 @@
     "url": "https://github.com/Sidd27/ragscope/issues"
   },
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=24.0.0"
   },
   "publishConfig": {
     "access": "public"
