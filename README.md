@@ -7,7 +7,6 @@ Get PASS/WARN/FAIL audit scores in your terminal before you ship.
 
 [![npm version](https://img.shields.io/npm/v/ragscope.svg?style=flat-square)](https://www.npmjs.com/package/ragscope)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg?style=flat-square)](https://nodejs.org)
 [![CI](https://github.com/Sidd27/ragscope/actions/workflows/ci.yml/badge.svg)](https://github.com/Sidd27/ragscope/actions/workflows/ci.yml)
 
 </div>
