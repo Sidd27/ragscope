@@ -28,6 +28,7 @@ ragscope/          ← single package
 - **Port is always 4321.** Never change it to 3000 or anything else.
 - **No external DB.** SQLite via `better-sqlite3` + Drizzle ORM. No migrations — `CREATE TABLE IF NOT EXISTS` in `createDb()`.
 - **No git push without asking.** Always confirm with the user before any `git push`.
+- **Always use the release script.** Never bump the version, tag, or create a GitHub release manually. Use `pnpm release <patch|minor|major>` (`scripts/release.js`) which handles version bump, commit, tag, push, and creates a **draft** GitHub release. The `publish.yml` workflow triggers on `release: types: [published]`, so npm publish only fires when the draft is manually published on GitHub.
 
 ## Common dev commands
 
@@ -43,6 +44,9 @@ pnpm dev
 
 # Send a synthetic 4-span trace
 npx tsx scripts/send-test-trace.ts
+
+# Release (patch / minor / major) — creates a draft GitHub release; publish the draft to trigger npm publish
+pnpm release patch
 ```
 
 ## Architecture notes
