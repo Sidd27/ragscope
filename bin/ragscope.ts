@@ -2,10 +2,8 @@
 import { createApp } from '../src/app.js';
 import { createDb } from '../src/db/index.js';
 import { LangfusePoller } from '../src/ingestion/langfuse.js';
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 import { readFileSync, existsSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
 import pc from 'picocolors';
 import { scoreTrace } from '../src/audit/scorer.js';
 import type { AuditResult } from '../src/audit/scorer.js';
@@ -116,7 +114,6 @@ function getArg(flag: string, defaultValue: string): string {
 }
 
 const apiPort = parseInt(getArg('--port', '4321'), 10);
-const uiPort = apiPort + 1;
 const dbPath = resolve(getArg('--db', './ragscope.db'));
 
 const db = createDb(dbPath);
@@ -127,20 +124,6 @@ await app.listen({ port: apiPort, host: '0.0.0.0' });
 console.log(`RAGScope API  →  http://localhost:${apiPort}`);
 console.log(`  OTLP:     POST http://localhost:${apiPort}/v1/traces`);
 console.log(`  Database: ${dbPath}`);
-
-// Spawn Next.js UI if standalone build is present
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const uiServer = resolve(__dirname, '../ui/server.js');
-if (existsSync(uiServer)) {
-  const child = spawn('node', [uiServer], {
-    env: { ...process.env, PORT: String(uiPort), HOSTNAME: '0.0.0.0' },
-    stdio: 'inherit',
-  });
-  process.on('exit', () => child.kill());
-  console.log(`RAGScope UI   →  http://localhost:${uiPort}`);
-} else {
-  console.log(`RAGScope UI   →  run "pnpm --filter web dev" to start the UI`);
-}
 
 const langfuseKey = process.env['LANGFUSE_PUBLIC_KEY'];
 const langfuseSecret = process.env['LANGFUSE_SECRET_KEY'];

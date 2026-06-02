@@ -10,11 +10,6 @@ export interface RerankerDiff {
   scoreDelta: number | null;
 }
 
-/**
- * Matches RETRIEVER chunks against RERANKER span output documents.
- * Sets rankReranked on each chunk that appears in the reranker output.
- * Returns the set of diff records for the response.
- */
 export function applyRerankerResults(
   chunks: RagChunk[],
   rerankerSpans: ParsedSpan[],
@@ -25,7 +20,6 @@ export function applyRerankerResults(
   const span = rerankerSpans[0];
   if (!span.documents || span.documents.length === 0) return { chunks, diffs: [] };
 
-  // Build a map: chunkId → reranked position (1-based)
   const rerankedRank = new Map<string, number>();
   const rerankedScore = new Map<string, number>();
   span.documents.forEach((doc, i) => {
@@ -49,7 +43,7 @@ export function applyRerankerResults(
         chunkId: c.chunkId,
         rankRetrieval: c.rankRetrieval!,
         rankReranked: rr,
-        rankDelta: c.rankRetrieval! - rr, // positive = moved up in ranking
+        rankDelta: c.rankRetrieval! - rr,
         scoreRaw: c.scoreRaw,
         scoreReranked: sr,
         scoreDelta: sr != null && c.scoreRaw != null ? sr - c.scoreRaw : null,

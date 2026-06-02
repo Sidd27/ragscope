@@ -70,7 +70,7 @@ export interface ParsedTrace {
   spans: ParsedSpan[];
 }
 
-// ─── DB row shapes (returned to frontend via tRPC) ────────────────────────────
+// ─── DB row shapes (returned by the JSON API) ─────────────────────────────────
 
 export interface RagTrace {
   id: string; // = traceId
