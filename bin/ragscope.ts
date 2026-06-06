@@ -1,59 +1,73 @@
 #!/usr/bin/env node
 import { createApp } from '../src/app.js';
-import { createDb } from '../src/db/index.js';
+import { createStore, getTraceById } from '../src/store/index.js';
 import { LangfusePoller } from '../src/ingestion/langfuse.js';
 import { resolve } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import pc from 'picocolors';
 import { scoreTrace } from '../src/audit/scorer.js';
 import type { AuditResult } from '../src/audit/scorer.js';
-import { getTraceById } from '../src/db/queries.js';
 
 const sessionScores: number[] = [];
-const verbose = process.argv.includes('--verbose');
+const verbose = !process.argv.includes('--compact');
+
+function labelColor(label: AuditResult['label']): (s: string) => string {
+  return label === 'PASS' ? pc.green : label === 'WARN' ? pc.yellow : pc.red;
+}
+
+function symColor(sym: '✓' | '~' | '✗'): (s: string) => string {
+  return sym === '✓' ? pc.green : sym === '~' ? pc.yellow : pc.red;
+}
+
+function subLabel(score: number): AuditResult['label'] {
+  return score >= 75 ? 'PASS' : score >= 50 ? 'WARN' : 'FAIL';
+}
+
+function makeBar(score: number, label: AuditResult['label']): string {
+  const filled = Math.round(score / 10);
+  const fill = labelColor(label);
+  return fill('█'.repeat(filled)) + pc.dim('░'.repeat(10 - filled));
+}
 
 function printAudit(result: AuditResult): void {
-  const col = result.label === 'PASS' ? pc.green : result.label === 'WARN' ? pc.yellow : pc.red;
-  const label = col(pc.bold(` ${result.label} `));
+  const col = labelColor(result.label);
+  const badge = col(pc.bold(` ${result.label} `));
   const score = pc.bold(`${result.overall}/100`);
+  const bar = makeBar(result.overall, result.label);
   const svc = pc.cyan(result.serviceName);
   const q = result.query
-    ? pc.dim(`"${result.query.slice(0, 60)}${result.query.length > 60 ? '…' : ''}"`)
-    : pc.dim('(no query)');
+    ? pc.dim(`"${result.query.slice(0, 55)}${result.query.length > 55 ? '…' : ''}"`)
+    : '';
 
   if (verbose) {
+    const border = pc.dim('│');
     console.log();
-    console.log(pc.dim(' ' + '─'.repeat(52)));
-    console.log(` ${label}  ${score}  ${svc}`);
-    console.log(` ${pc.dim('Query')}  ${q}`);
-    console.log();
+    console.log(`  ${badge}  ${score}  ${bar}  ${svc}`);
+    if (q) console.log(`  ${border}  ${q}`);
+    console.log(`  ${border}`);
     for (const s of result.subscores) {
-      const c = s.symbol === '✓' ? pc.green : s.symbol === '~' ? pc.yellow : pc.red;
+      const c = symColor(s.symbol);
+      const subBar = makeBar(s.score, subLabel(s.score));
       console.log(
-        `   ${c(s.symbol)}  ${s.name.padEnd(12)} ${String(s.score).padStart(3)}/100  ${pc.dim(s.finding)}`,
+        `  ${border}  ${c(s.symbol)}  ${pc.dim(s.name.padEnd(11))} ${pc.bold(String(s.score).padStart(3))}  ${subBar}  ${pc.dim(s.finding)}`,
       );
     }
     const recs = result.subscores.filter((s) => s.recommendation);
     if (recs.length > 0) {
-      console.log();
-      console.log(` ${pc.bold('Recommendations')}`);
-      for (const s of recs) console.log(`   ${pc.yellow('→')} ${s.recommendation}`);
+      console.log(`  ${border}`);
+      for (const s of recs) console.log(`  ${border}  ${pc.yellow('→')} ${s.recommendation}`);
     }
-    console.log(pc.dim(' ' + '─'.repeat(52)));
+    console.log(`  ${border}`);
   } else {
-    const subs = result.subscores
-      .map((s) => {
-        const c = s.symbol === '✓' ? pc.green : s.symbol === '~' ? pc.yellow : pc.red;
-        return c(`${s.name}:${s.score}`);
-      })
-      .join('  ');
-    console.log(` ${label}  ${score}  ${svc}  ${q}`);
-    console.log(`       ${subs}`);
-    const recs = result.subscores.filter((s) => s.recommendation).map((s) => s.recommendation!);
-    if (recs.length > 0) {
-      console.log(`       ${pc.yellow('→')} ${recs.join(' · ')}`);
-    }
     console.log();
+    const header = [badge, score, bar, svc, q].filter(Boolean).join('  ');
+    console.log(`  ${header}`);
+    const subs = result.subscores
+      .map((s) => `${symColor(s.symbol)(s.symbol)} ${pc.dim(s.name)}:${pc.bold(String(s.score))}`)
+      .join('  ');
+    console.log(`          ${subs}`);
+    const recs = result.subscores.filter((s) => s.recommendation).map((s) => s.recommendation!);
+    if (recs.length > 0) console.log(`          ${pc.yellow('→')} ${recs.join('  ·  ')}`);
   }
 }
 
@@ -69,14 +83,14 @@ function printSession(): void {
         : last < avg
           ? pc.red(' ↓')
           : pc.dim(' →');
-  process.stdout.write(` ${pc.dim('─'.repeat(52))}\n`);
-  process.stdout.write(
-    ` ${pc.dim('Session')}  ${sessionScores.length} ${sessionScores.length === 1 ? 'query' : 'queries'} · avg ${pc.bold(String(avg))}/100${trend}\n\n`,
+  console.log(`\n  ${pc.dim('─'.repeat(50))}`);
+  console.log(
+    `  ${pc.dim('Session')}  ${sessionScores.length} ${sessionScores.length === 1 ? 'query' : 'queries'}  ·  avg ${pc.bold(String(avg))}/100${trend}\n`,
   );
 }
 
-async function handleTrace(traceId: string): Promise<void> {
-  const result = await getTraceById(db, traceId);
+function handleTrace(traceId: string): void {
+  const result = getTraceById(store, traceId);
   if (!result) return;
   const audit = scoreTrace(
     result.trace.serviceName,
@@ -114,25 +128,64 @@ function getArg(flag: string, defaultValue: string): string {
 }
 
 const apiPort = parseInt(getArg('--port', '4321'), 10);
-const dbPath = resolve(getArg('--db', './ragscope.db'));
 
-const db = createDb(dbPath);
-const app = createApp(db, handleTrace);
+const store = createStore();
+const app = createApp(store, handleTrace);
 
 await app.listen({ port: apiPort, host: '0.0.0.0' });
 
-console.log(`RAGScope API  →  http://localhost:${apiPort}`);
-console.log(`  OTLP:     POST http://localhost:${apiPort}/v1/traces`);
-console.log(`  Database: ${dbPath}`);
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8')) as {
+  version: string;
+};
+
+const BANNER = [
+  '██████╗  █████╗  ██████╗ ███████╗ ██████╗  ██████╗ ██████╗ ███████╗',
+  '██╔══██╗██╔══██╗██╔════╝ ██╔════╝ ██╔════╝██╔═══██╗██╔══██╗██╔════╝',
+  '██████╔╝███████║██║  ███╗███████╗ ██║      ██║   ██║██████╔╝█████╗  ',
+  '██╔══██╗██╔══██║██║   ██║╚════██║ ██║      ██║   ██║██╔═══╝ ██╔══╝  ',
+  '██║  ██║██║  ██║╚██████╔╝███████║ ╚██████╗ ╚██████╔╝██║     ███████╗',
+  '╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝  ╚═════╝  ╚═════╝╚═╝     ╚══════╝',
+];
+
+const maxW = Math.max(...BANNER.map((l) => l.length));
+const boxW = maxW + 2; // inner width: 1 space padding each side
+
+const boxRow = (coloredContent: string, rawLen: number) => {
+  const pad = ' '.repeat(Math.max(0, boxW - rawLen));
+  return `  ${pc.dim('│')}${coloredContent}${pad}${pc.dim('│')}`;
+};
+const blankRow = boxRow(' '.repeat(boxW), boxW);
+const sepRow = `  ${pc.dim('├' + '─'.repeat(boxW) + '┤')}`;
+const infoRow = (label: string, value: string) => {
+  const raw = ` · ${label.padEnd(9)} ${value}`;
+  const colored = ` ${pc.cyan('·')} ${label.padEnd(9)} ${pc.bold(value)}`;
+  return boxRow(colored, raw.length);
+};
 
 const langfuseKey = process.env['LANGFUSE_PUBLIC_KEY'];
 const langfuseSecret = process.env['LANGFUSE_SECRET_KEY'];
+let poller: LangfusePoller | null = null;
 if (langfuseKey && langfuseSecret) {
-  const poller = new LangfusePoller({
+  poller = new LangfusePoller({
     publicKey: langfuseKey,
     secretKey: langfuseSecret,
     baseUrl: process.env['LANGFUSE_BASE_URL'],
   });
-  poller.start(db, handleTrace);
-  console.log(`  Langfuse sync: enabled (polling every 30s)`);
+  poller.start(store, handleTrace);
 }
+
+console.log();
+console.log(`  ${pc.dim('╭' + '─'.repeat(boxW) + '╮')}`);
+for (const line of BANNER) {
+  const raw = ` ${line.padEnd(maxW)} `;
+  console.log(boxRow(` ${pc.cyan(line.padEnd(maxW))} `, raw.length));
+}
+console.log(sepRow);
+console.log(blankRow);
+console.log(infoRow('Port', `:${apiPort}`));
+console.log(infoRow('Version', `v${pkg.version}`));
+console.log(infoRow('OTLP', `http://localhost:${apiPort}/v1/traces`));
+if (poller) console.log(infoRow('Langfuse', 'polling every 30s'));
+console.log(blankRow);
+console.log(`  ${pc.dim('╰' + '─'.repeat(boxW) + '╯')}`);
+console.log();

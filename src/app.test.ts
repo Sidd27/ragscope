@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createApp } from './app.js';
-import { createDb } from './db/index.js';
-import { insertTrace } from './db/queries.js';
+import { createStore, upsertTrace } from './store/index.js';
 import type { RagTrace } from './types.js';
 
 function makeTrace(id: string): RagTrace {
@@ -9,7 +8,7 @@ function makeTrace(id: string): RagTrace {
     id,
     serviceName: 'svc',
     query: 'q',
-    source: 'manual',
+    source: 'otlp',
     totalLatencyMs: 100,
     spanCount: 1,
     chunkCount: 0,
@@ -41,12 +40,12 @@ const otlpTrace = {
 };
 
 describe('Fastify app integration', () => {
-  let db: ReturnType<typeof createDb>;
+  let store: ReturnType<typeof createStore>;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(async () => {
-    db = createDb(':memory:');
-    app = createApp(db);
+    store = createStore();
+    app = createApp(store);
     await app.ready();
   });
 
@@ -67,14 +66,11 @@ describe('Fastify app integration', () => {
     expect(res.json().partialSuccess).toBeDefined();
   });
 
-  it('GET /api/traces returns ingested traces', async () => {
-    await insertTrace(db, makeTrace('rest-trace-1'));
-    const res = await app.inject({ method: 'GET', url: '/api/traces' });
+  it('GET /api/traces/:id returns trace detail', async () => {
+    upsertTrace(store, makeTrace('rest-trace-1'), [], []);
+    const res = await app.inject({ method: 'GET', url: '/api/traces/rest-trace-1' });
     expect(res.statusCode).toBe(200);
-    const body = res.json();
-    expect(Array.isArray(body)).toBe(true);
-    expect(body).toHaveLength(1);
-    expect(body[0].id).toBe('rest-trace-1');
+    expect(res.json().trace.id).toBe('rest-trace-1');
   });
 
   it('GET /api/traces/:id returns 404 for unknown trace', async () => {

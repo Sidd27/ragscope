@@ -8,9 +8,10 @@ Thanks for your interest. Contributions of all kinds are welcome — bug reports
 git clone https://github.com/Sidd27/ragscope.git
 cd ragscope
 pnpm install
-pnpm rebuild better-sqlite3   # native binding, required after install
-pnpm test                      # 70 tests should pass
+pnpm test        # 68 tests should pass
 ```
+
+No native dependencies — install is a plain `pnpm install`.
 
 ## Dev workflow
 
@@ -30,10 +31,10 @@ npx tsx scripts/send-test-trace.ts
 
 ```
 src/
-  types.ts          — all shared types
-  app.ts            — Fastify server, REST routes
-  db/               — SQLite schema + queries (Drizzle ORM)
-  enrichment/       — scoring, tokenization, boundary detection, reranker diff
+  types.ts          — all shared types (ParsedSpan, RagChunk, RagTrace, …)
+  app.ts            — Fastify server and REST routes
+  store/            — in-memory Map store (createStore, upsertTrace, getTraceById)
+  enrichment/       — normalizer, tokenizer, boundary detection, reranker diff, pipeline
   ingestion/        — OTLP parser, Langfuse poller
   audit/            — scoring engine (scoreTrace, sub-scores)
 bin/
@@ -44,18 +45,23 @@ scripts/
 
 ## Adding an ingestion adapter
 
-The easiest high-value contribution. Implement this interface in `src/ingestion/`:
+The easiest high-value contribution. Implement a poller in `src/ingestion/` that calls `ingestTrace` from the enrichment pipeline:
 
 ```typescript
-export interface IngestionAdapter {
-  name: string;
-  poll(db: Db, onTrace?: (traceId: string) => void): Promise<void>;
+import { ingestTrace } from '../enrichment/pipeline.js';
+import type { Store } from '../store/index.js';
+
+export class MyAdapter {
+  start(store: Store, onTrace?: (traceId: string) => void): void {
+    // poll your source, call ingestTrace(store, parsedTrace, 'otlp') per trace
+    // call onTrace(traceId) so the CLI prints the audit score
+  }
 }
 ```
 
-See `src/ingestion/langfuse.ts` for a reference implementation. Register the adapter in `bin/ragscope.ts`.
+See `src/ingestion/langfuse.ts` for a reference implementation. Wire the adapter into `bin/ragscope.ts` behind an env-var guard.
 
-**Wanted:** LangSmith · Helicone · LangFuse webhooks (instead of polling)
+**Wanted:** LangSmith · Helicone · Langfuse webhooks (instead of polling)
 
 ## Pull requests
 

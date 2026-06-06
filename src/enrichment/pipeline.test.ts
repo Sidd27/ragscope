@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb } from '../db/index.js';
+import { createStore, getTraceById } from '../store/index.js';
 import { ingestTrace } from './pipeline.js';
-import { getTraces, getTraceById } from '../db/queries.js';
 import type { ParsedTrace } from '../types.js';
 
 function makeTrace(): ParsedTrace {
@@ -17,7 +16,6 @@ function makeTrace(): ParsedTrace {
         startTimeMs: 1000,
         endTimeMs: 1500,
         latencyMs: 500,
-        rawAttributes: '[]',
         prompt: 'What is Paris?',
       },
       {
@@ -30,7 +28,6 @@ function makeTrace(): ParsedTrace {
         endTimeMs: 1150,
         latencyMs: 100,
         system: 'qdrant',
-        rawAttributes: '[]',
         documents: [
           { id: 'doc-1', score: 0.9, content: 'Paris is the capital of France.' },
           { id: 'doc-2', score: 0.7, content: 'France is a country in Europe.' },
@@ -41,65 +38,65 @@ function makeTrace(): ParsedTrace {
 }
 
 describe('ingestTrace', () => {
-  let db: ReturnType<typeof createDb>;
+  let store: ReturnType<typeof createStore>;
 
   beforeEach(() => {
-    db = createDb(':memory:');
+    store = createStore();
   });
 
-  it('inserts trace, spans, and chunks', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const traces = await getTraces(db);
-    expect(traces).toHaveLength(1);
-    expect(traces[0].spanCount).toBe(2);
-    expect(traces[0].chunkCount).toBe(2);
+  it('inserts trace, spans, and chunks', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
+    expect(result).not.toBeNull();
+    expect(result!.trace.spanCount).toBe(2);
+    expect(result!.trace.chunkCount).toBe(2);
   });
 
-  it('sets correct totalLatencyMs', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('sets correct totalLatencyMs', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     expect(result!.trace.totalLatencyMs).toBe(500);
   });
 
-  it('extracts query from CHAIN span prompt', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('extracts query from CHAIN span prompt', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     expect(result!.trace.query).toBe('What is Paris?');
   });
 
-  it('normalizes scores for qdrant (pass-through)', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('normalizes scores for qdrant (pass-through)', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     const topChunk = result!.chunks.find((c) => c.chunkId === 'doc-1')!;
     expect(topChunk.scoreRaw).toBeCloseTo(0.9);
     expect(topChunk.scoreNormalized).toBeCloseTo(0.9);
   });
 
-  it('assigns rankRetrieval to chunks', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('assigns rankRetrieval to chunks', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     const ranks = result!.chunks.map((c) => c.rankRetrieval).sort();
     expect(ranks).toEqual([1, 2]);
   });
 
-  it('sets tokenCount for chunks with content', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('sets tokenCount for chunks with content', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     for (const chunk of result!.chunks) {
       expect(chunk.tokenCount).not.toBeNull();
       expect(chunk.tokenCount).toBeGreaterThan(0);
     }
   });
 
-  it('marks scoreMissing=true for langfuse source with zero score', async () => {
+  it('marks scoreMissing=true for langfuse source with zero score', () => {
     const trace = makeTrace();
     trace.spans[1].documents = [{ id: 'doc-x', score: 0 }];
-    await ingestTrace(db, trace, 'langfuse');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+    ingestTrace(store, trace, 'langfuse');
+    const result = getTraceById(store, 'trace-pipeline-001');
     expect(result!.chunks.find((c) => c.chunkId === 'doc-x')!.scoreMissing).toBe(true);
   });
 
-  it('sets inContext=true for chunks whose content appears in LLM prompt', async () => {
+  it('sets inContext=true for chunks whose content appears in LLM prompt', () => {
     const trace = makeTrace();
     trace.spans.push({
       traceId: 'trace-pipeline-001',
@@ -110,12 +107,10 @@ describe('ingestTrace', () => {
       startTimeMs: 1200,
       endTimeMs: 1450,
       latencyMs: 250,
-      rawAttributes: '[]',
-      // Only doc-1 content appears in the prompt
       prompt: 'Context:\nParis is the capital of France.\n\nQuestion: What is Paris?',
     });
-    await ingestTrace(db, trace, 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+    ingestTrace(store, trace, 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     const doc1 = result!.chunks.find((c) => c.chunkId === 'doc-1')!;
     const doc2 = result!.chunks.find((c) => c.chunkId === 'doc-2')!;
     expect(doc1.inContext).toBe(true);
@@ -124,22 +119,22 @@ describe('ingestTrace', () => {
     expect(doc2.contextPosition).toBeNull();
   });
 
-  it('leaves inContext=false when no LLM span has a prompt', async () => {
-    await ingestTrace(db, makeTrace(), 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+  it('leaves inContext=false when no LLM span has a prompt', () => {
+    ingestTrace(store, makeTrace(), 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     for (const chunk of result!.chunks) {
       expect(chunk.inContext).toBe(false);
     }
   });
 
-  it('sets overlapWithNext on chunks via boundary detection', async () => {
+  it('sets overlapWithNext on chunks via boundary detection', () => {
     const trace = makeTrace();
     trace.spans[1].documents = [
       { id: 'a', score: 0.9, content: 'The quick brown fox' },
       { id: 'b', score: 0.7, content: 'brown fox jumps over' },
     ];
-    await ingestTrace(db, trace, 'traceai');
-    const result = await getTraceById(db, 'trace-pipeline-001');
+    ingestTrace(store, trace, 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
     const chunkA = result!.chunks.find((c) => c.chunkId === 'a')!;
     expect(chunkA.overlapWithNext).toBeGreaterThan(0);
   });

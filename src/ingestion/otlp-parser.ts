@@ -126,7 +126,6 @@ export function parseOtlpPayload(payload: OtlpPayload): ParsedTrace[] {
           system: attrs['gen_ai.system'] as string | undefined,
           inputTokens: attrs['gen_ai.usage.input_tokens'] as number | undefined,
           outputTokens: attrs['gen_ai.usage.output_tokens'] as number | undefined,
-          rawAttributes: JSON.stringify(span.attributes ?? []),
           documents: documents.length > 0 ? documents : undefined,
           prompt: typeof prompt === 'string' ? prompt : undefined,
         };

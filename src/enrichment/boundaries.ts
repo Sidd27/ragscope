@@ -14,7 +14,11 @@ export function annotateChunkBoundaries(chunks: RagChunk[]): RagChunk[] {
     if (i === sorted.length - 1 || !chunk.content || !sorted[i + 1].content) {
       return { ...chunk, overlapWithNext: 0 };
     }
-    const overlap = detectOverlap(chunk.content, sorted[i + 1].content!);
-    return { ...chunk, overlapWithNext: overlap };
+    const overlapChars = detectOverlap(chunk.content, sorted[i + 1].content!);
+    const ratio =
+      overlapChars === 0
+        ? 0
+        : overlapChars / Math.min(chunk.content.length, sorted[i + 1].content!.length);
+    return { ...chunk, overlapWithNext: ratio };
   });
 }

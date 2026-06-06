@@ -4,7 +4,6 @@ import type { RagSpan, RagChunk } from '../types.js';
 
 function makeChunk(overrides: Partial<RagChunk> = {}): RagChunk {
   return {
-    id: 'uuid-1',
     spanId: 'span-1',
     traceId: 'trace-1',
     chunkId: 'chunk-1',
@@ -107,9 +106,9 @@ describe('scoreTrace', () => {
     expect(['WARN', 'FAIL']).toContain(r2.label);
   });
 
-  it('returns 4 subscores named precision, efficiency, redundancy, coverage', () => {
+  it('returns 4 subscores named precision, efficiency, uniqueness, coverage', () => {
     const result = scoreTrace('svc', 'q', [], [makeChunk()]);
     const names = result.subscores.map((s) => s.name);
-    expect(names).toEqual(['precision', 'efficiency', 'redundancy', 'coverage']);
+    expect(names).toEqual(['precision', 'efficiency', 'uniqueness', 'coverage']);
   });
 });

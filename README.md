@@ -2,8 +2,9 @@
 
 # RAGScope
 
-**Lighthouse for RAG pipelines.**
-Get PASS/WARN/FAIL audit scores in your terminal before you ship.
+**You can't fix what you can't see.**
+
+A local diagnostic tool for RAG pipelines. Scores every query your pipeline processes and tells you exactly what's wrong — before you ship.
 
 [![npm version](https://img.shields.io/npm/v/ragscope.svg?style=flat-square)](https://www.npmjs.com/package/ragscope)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
@@ -18,20 +19,59 @@ Get PASS/WARN/FAIL audit scores in your terminal before you ship.
        ✓ precision:90  ✓ efficiency:80  ✓ redundancy:85  ✓ coverage:100
 
  WARN  61/100  my-rag-app  "what is dense passage retrieval?"
-       ✗ precision:30  ✗ efficiency:45  ~ redundancy:70  ✓ coverage:100
-       → Reduce TOP_K 10→5  · 2 near-duplicate chunks detected
+       ✗ precision:30  ✗ efficiency:45  ~ uniqueness:70  ✓ coverage:100
+       → Reduce TOP_K 10→5 (only 5 chunks reached LLM)  · 2 near-duplicate chunks
 
- ─────────────────────────────────────────────────────────────
- Session  2 queries · avg 72/100  ↑ improving
+ ────────────────────────────────────────────────────────────────
+ Session  2 queries · avg 72/100 ↑
 ```
 
 ---
 
 ## The problem
 
-You build a RAG pipeline. It looks fine in demos. You ship it. Users complain the answers are wrong or vague — but nothing in your logs tells you why.
+Most RAG pipelines fail silently. You retrieve 10 chunks, the LLM prompt only contains 3, and nothing in your logs tells you the other 7 were dropped. You're retrieving near-duplicates that eat your context window. Your similarity scores are zero because your vector store returns distances and nobody normalized them. The model gives vague answers, and there's nothing to debug.
 
-The real issue is usually invisible: too many chunks retrieved, half of them never reaching the LLM, near-duplicate content eating your context window, no similarity scores to optimize against. RAGScope makes all of this visible — scored, labelled, and actionable — in your terminal, before you ship.
+These are all retrieval mechanics problems. They're fixable. But you can't see them without tracing.
+
+RAGScope makes them visible — scored, labelled, and actionable — in your terminal, before users ever see the output.
+
+---
+
+## What it is
+
+RAGScope is a local OTLP receiver that runs on port 4321 alongside your development server. It receives the telemetry your RAG pipeline already emits, analyzes the full trace end-to-end, and prints a diagnostic score to your terminal the moment each query completes.
+
+It is a **dev-time quality gate** — the same category as a linter or type checker. You run it locally while building, catch the problems, and ship with confidence. It is not a production monitoring tool.
+
+---
+
+## How it works
+
+Your RAG app emits OpenTelemetry spans as it runs: a retrieval span (with chunk IDs, scores, and content), optionally a reranking span, and an LLM span (with the full prompt text). RAGScope receives these via standard OTLP and extracts what it needs.
+
+```
+Your RAG app  ──(OTLP/JSON)──▶  RAGScope :4321
+                                      │
+                     ┌────────────────┼────────────────────┐
+                     ▼                ▼                     ▼
+               parse spans      normalize scores      detect context
+               (wire format     (Qdrant/Chroma/        (which chunks
+               → typed)         Pinecone → [0,1])      reached the LLM)
+                     │                │                     │
+                     └────────────────┼─────────────────────┘
+                                      ▼
+                              score the trace
+                        (precision · efficiency ·
+                          redundancy · coverage)
+                                      │
+                                      ▼
+                             print to terminal
+```
+
+**Context detection** is the key mechanism: RAGScope compares each chunk's content against the actual LLM prompt text. If the chunk appears in the prompt, it was used (`inContext: true`). If not, it was retrieved and discarded. This is how RAGScope measures precision and efficiency without any special integration — it reads the spans your instrumentation already emits.
+
+All trace data lives in memory for the session. Nothing is written to disk. Nothing leaves your machine.
 
 ---
 
@@ -41,96 +81,154 @@ The real issue is usually invisible: too many chunks retrieved, half of them nev
 # 1. Start RAGScope (no install needed)
 npx ragscope start
 
-# 2. Point your pipeline's OTel exporter at it
+# 2. Point your pipeline at it — one environment variable
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4321
 
-# 3. Run your test queries — scores appear instantly
+# 3. Run your test queries — scores appear the moment each one completes
 ```
 
-That's it. No config files, no accounts, no data leaving your machine.
+No config files. No accounts. No data leaving your machine. Requires Node.js ≥ 24.
 
 ---
 
-## How it scores
+## The four scores
 
-Every query gets four sub-scores combined into a single 0–100:
+Every trace gets a 0–100 score built from four sub-scores. The weights reflect their practical impact on answer quality.
 
-| Sub-score               | Weight | What it measures                                           |
-| ----------------------- | ------ | ---------------------------------------------------------- |
-| **Retrieval Precision** | 40%    | Fraction of retrieved chunks that actually reached the LLM |
-| **Context Efficiency**  | 30%    | Token waste on chunks the LLM never saw                    |
-| **Redundancy**          | 20%    | Near-duplicate chunks eating your context window           |
-| **Score Coverage**      | 10%    | Whether chunks carry similarity scores for optimization    |
+### Retrieval Precision — 40%
 
-| Label    | Score | Meaning                                    |
-| -------- | ----- | ------------------------------------------ |
-| **PASS** | ≥ 75  | Retrieval pipeline is healthy              |
-| **WARN** | 50–74 | Issues detected — check recommendations    |
-| **FAIL** | < 50  | Significant retrieval problems before ship |
+**What it measures:** The fraction of retrieved chunks that actually appeared in the LLM's prompt.
 
-Add `--verbose` for a full per-query breakdown with specific recommendations.
+**Why it's weighted highest:** A chunk that doesn't reach the LLM contributes nothing to the answer. It costs retrieval latency, vector store bandwidth, and context window space — and then gets silently dropped. If your pipeline retrieves 10 chunks and the LLM only sees 3, your TOP_K is more than 3× too high for this query.
+
+**What a bad score looks like:**
+
+```
+✗ precision:30
+→ Reduce TOP_K 10→3 (only 3 chunks reached LLM)
+```
+
+---
+
+### Context Efficiency — 30%
+
+**What it measures:** The fraction of retrieved tokens that the LLM actually consumed.
+
+**Why it matters:** Every token in a retrieved chunk that doesn't reach the prompt is a token you paid to embed, store, and retrieve — and then threw away. Low efficiency means your context window is being filled with chunks that get cut before the LLM sees them, which also means the chunks that _do_ matter might be getting truncated.
+
+**What a bad score looks like:**
+
+```
+✗ efficiency:45
+```
+
+55% of retrieved tokens were never seen by the model.
+
+---
+
+### Uniqueness — 20%
+
+**What it measures:** How distinct your retrieved chunks are from each other. 100 = fully unique, 0 = all near-duplicates. Computed from text overlap between adjacent chunks.
+
+**Why it matters:** When your chunking strategy creates overlapping segments, the model receives the same information multiple times. This wastes context window space, can bias the model toward repeated facts, and usually indicates a chunking configuration problem rather than a retrieval problem.
+
+**What a bad score looks like:**
+
+```
+~ uniqueness:60
+→ 2 near-duplicate chunks — deduplicate at ingest time
+```
+
+---
+
+### Score Coverage — 10%
+
+**What it measures:** Whether retrieved chunks carry non-zero similarity scores.
+
+**Why it matters:** Without similarity scores you can't understand which chunks are the strongest matches, can't tune retrieval thresholds, and can't detect when your vector store is returning results in arbitrary order. This score is a signal flag, not a performance metric.
+
+**Common cause of zero scores:** Langfuse sometimes omits scores from trace exports. Chroma returns L2 distances — RAGScope normalizes those automatically, so they won't trigger this flag.
+
+---
+
+### Labels
+
+| Score | Label    | Meaning                                 |
+| ----- | -------- | --------------------------------------- |
+| ≥ 75  | **PASS** | Pipeline is healthy for this query      |
+| 50–74 | **WARN** | Issues present — review recommendations |
+| < 50  | **FAIL** | Significant retrieval problems          |
+
+Run with `--verbose` for a per-score breakdown with specific tuning recommendations.
 
 ---
 
 ## Integrations
 
-RAGScope is source-agnostic. Traces arrive via two paths.
+RAGScope accepts traces via two paths.
 
-### Path 1 — Any OTel-compatible tool
+### Path 1 — OTLP (any OTel-compatible tool)
 
-One line change: set the OTLP exporter URL to `http://localhost:4321/v1/traces`.
+Set one environment variable. No code changes in most setups.
 
-**TraceAI / Traceloop** (auto-instruments LangChain, LlamaIndex, OpenAI, Pinecone, Qdrant, Cohere…)
-
-```typescript
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { instrument } from '@traceloop/node-server-sdk';
-
-const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
-});
-sdk.start();
-instrument();
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4321
 ```
 
-**Vercel AI SDK**
+Works with any instrumentation library that emits OpenTelemetry spans. Common setups:
+
+**Traceloop / OpenLLMetry** — auto-instruments LangChain, LlamaIndex, OpenAI, Pinecone, Qdrant, Cohere, and more:
 
 ```typescript
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { Traceloop } from '@traceloop/node-server-sdk';
 
-const sdk = new NodeSDK({
-  traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
+Traceloop.init({
+  exporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
 });
-sdk.start();
 ```
 
-**Phoenix (Arize) / OpenLLMetry** — set `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4321` or `TRACELOOP_BASE_URL=http://localhost:4321`.
-
-**Manual OpenTelemetry**
+**Vercel AI SDK:**
 
 ```typescript
-import { trace } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 
-const sdk = new NodeSDK({
+new NodeSDK({
   traceExporter: new OTLPTraceExporter({ url: 'http://localhost:4321/v1/traces' }),
-});
-sdk.start();
+}).start();
+```
 
-const tracer = trace.getTracer('my-rag-app');
+**Phoenix (Arize):** set `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:4321`
 
-const span = tracer.startSpan('qdrant.query');
+**OpenLLMetry:** set `TRACELOOP_BASE_URL=http://localhost:4321`
+
+**Manual instrumentation** — the minimum RAGScope needs to score a trace is a retrieval span with two attributes:
+
+```typescript
 span.setAttribute('gen_ai.operation.name', 'retrieve');
-span.setAttribute('gen_ai.retrieval.documents', JSON.stringify(docs));
-span.end();
+span.setAttribute(
+  'gen_ai.retrieval.documents',
+  JSON.stringify([
+    { id: 'chunk-1', score: 0.92, content: 'The actual chunk text...' },
+    { id: 'chunk-2', score: 0.81, content: 'Another chunk...' },
+  ]),
+);
 ```
 
-### Path 2 — Langfuse
+For context detection to work, add an LLM span with the full prompt:
 
-Set two env vars — RAGScope polls every 30 seconds, zero code changes:
+```typescript
+span.setAttribute('gen_ai.operation.name', 'chat');
+span.setAttribute('ai.prompt', fullPromptText);
+```
+
+---
+
+### Path 2 — Langfuse (zero code changes)
+
+If you're already logging traces to Langfuse, set two env vars. RAGScope polls your project every 30 seconds and scores any new traces it finds — no code changes, no redeployment.
 
 ```bash
 LANGFUSE_PUBLIC_KEY=pk-lf-... \
@@ -138,84 +236,116 @@ LANGFUSE_SECRET_KEY=sk-lf-... \
 npx ragscope start
 ```
 
-> **Coming soon:** LangSmith · Helicone adapters. [Open an issue](https://github.com/Sidd27/ragscope/issues) to vote or contribute.
+For a self-hosted instance, add `LANGFUSE_BASE_URL=https://your-langfuse.com`.
+
+> **Coming soon:** LangSmith · Helicone adapters. [Open an issue](https://github.com/Sidd27/ragscope/issues) to request or contribute one.
 
 ---
 
-## CLI options
+## Problems it catches
+
+| Symptom                                               | Root cause                                                                    | RAGScope signal                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| Answers are vague despite relevant documents existing | TOP_K too high — most retrieved chunks are discarded before the LLM sees them | Low precision + specific TOP_K recommendation |
+| High token costs, slow responses                      | Retrieving large chunks that mostly get dropped                               | Low efficiency + wasted token count           |
+| Model repeats the same information                    | Near-duplicate chunks in retrieval output                                     | Low uniqueness score + near-duplicate count   |
+| Can't tune retrieval thresholds                       | Scores missing from trace data                                                | Low coverage + normalization note             |
+| Reranker not improving answer quality                 | Chunks are reordered but the same ones are still dropped                      | Reranker diff in `/api/traces/:id`            |
+
+---
+
+## CLI reference
 
 ```
 npx ragscope start [options]
 
   --port <n>     Port to listen on (default: 4321)
-  --db <path>    Path to SQLite database file (default: in-memory)
-  --verbose      Show full sub-score breakdown and recommendations per query
+  --compact      One-line output per query instead of the full per-score breakdown
 ```
 
 ---
 
-## Works with
+## Compatibility
 
-| Category           | Tools                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Vector stores**  | Qdrant · Chroma · Pinecone · Weaviate · pgvector                       |
-| **LLM frameworks** | LangChain · LlamaIndex · Vercel AI SDK · custom                        |
-| **Models**         | OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider |
-| **Rerankers**      | Cohere Rerank · any span with `gen_ai.operation.name = rerank`         |
-| **Ingestion**      | Any OTel exporter · Langfuse · _(LangSmith, Helicone coming soon)_     |
+|                   | Supported                                                              |
+| ----------------- | ---------------------------------------------------------------------- |
+| **Node.js**       | ≥ 24.0.0                                                               |
+| **Ingestion**     | OTLP/HTTP · Langfuse polling                                           |
+| **Languages**     | Any with OTel support (Node.js, Python, Go, Java…)                     |
+| **Frameworks**    | LangChain · LlamaIndex · Vercel AI SDK · custom pipelines              |
+| **Vector stores** | Qdrant · Chroma · Pinecone · Weaviate · pgvector · any OTLP source     |
+| **Rerankers**     | Cohere Rerank · any span with `gen_ai.operation.name = rerank`         |
+| **Models**        | OpenAI · Anthropic · Cohere · Mistral · any OTel-instrumented provider |
 
 ---
 
-## Why not just use Langfuse / Phoenix / Arize?
+## What it doesn't do
 
-Those are excellent **production monitoring** tools — they record what happened after you ship.
+RAGScope is deliberately narrow. Knowing what it won't do matters as much as knowing what it will.
 
-RAGScope is a **pre-ship quality gate** — like ESLint or Lighthouse, you run it during development to catch retrieval problems before they reach users. Different job, smaller footprint, zero cloud dependency.
+**It is not a production monitoring tool.** Trace data lives in memory for the process lifetime. Use Langfuse, Phoenix, or Arize for production observability.
+
+**It does not evaluate answer quality.** RAGScope measures retrieval mechanics — whether the right chunks are reaching the LLM efficiently. It does not judge whether the answers are factually correct or semantically appropriate.
+
+**It does not run your reranker.** It observes your existing reranker span and reports whether the reordering is helping. It does not add reranking to your pipeline.
+
+**It has limited support for agentic patterns.** It understands linear CHAIN → RETRIEVER → RERANKER → LLM pipelines well. Complex agent loops with tool use, multi-hop retrieval, or dynamic prompt construction may produce partial or misleading scores.
+
+---
+
+## Why not Langfuse / Phoenix / Arize?
+
+Those are production observability platforms. They're designed to record, store, and analyze what happens after you ship — at scale, over time, with dashboards and alerting.
+
+RAGScope is a development tool. It answers a different question: _"Is my pipeline working correctly right now, before I ship?"_ Zero setup, zero cloud, immediate feedback in the terminal. Different job, different tool.
+
+Think of it as the difference between a linter (runs in your editor while you code) and a production error tracker (records what breaks for real users). You need both. They don't replace each other.
 
 ---
 
 ## Roadmap
 
-### Now (v0.1.x)
+### Current (v0.1.x)
 
-- [x] OTLP ingestion — works with any OTel-compatible source
+- [x] OTLP ingestion — any OTel-compatible source
 - [x] Langfuse polling adapter
-- [x] Four sub-scores: precision, efficiency, redundancy, coverage
-- [x] PASS / WARN / FAIL per query with rolling session average
-- [x] `--verbose` flag for full breakdown + recommendations
+- [x] Score normalization per vector store (Qdrant · Chroma · Pinecone · Weaviate)
+- [x] Context assembly detection — which chunks actually reached the LLM
+- [x] Reranker diff — before/after rank and score comparison
+- [x] Four sub-scores: precision · efficiency · uniqueness · coverage
+- [x] Actionable recommendations per score (TOP_K sizing, deduplication, score logging)
+- [x] Rolling session average with trend indicator
 
-### Next (v0.2)
+### v0.2
 
 - [ ] **LangSmith adapter** — poll runs via LangSmith API, zero code changes
 - [ ] **Helicone adapter** — fetch requests via Helicone API
 - [ ] **Langfuse webhooks** — real-time instead of 30s polling
-- [ ] **Audit report export** — `npx ragscope report` writes a Markdown/JSON summary you can commit or share
+- [ ] **Audit report** — `npx ragscope report` exports a Markdown/JSON summary of the session, shareable and committable
 
 ### Later
 
-- [ ] **Compare mode** — `npx ragscope compare v1 v2` diffs two pipeline versions side-by-side
-- [ ] **Python support** — native Python instrumentation helpers
-- [ ] **Threshold config** — `.ragscope.json` to set custom PASS/WARN/FAIL thresholds per project
-- [ ] **Span-level drill-down** — `--trace <id>` to inspect a single trace in detail
+- [ ] **Compare mode** — `npx ragscope compare` diffs two pipeline versions from separate sessions
+- [ ] **Threshold config** — `.ragscope.json` for custom PASS/WARN/FAIL thresholds per project
+- [ ] **Trace drill-down** — `--trace <id>` to inspect a single trace in detail in the terminal
+- [ ] **Python instrumentation helpers** — common patterns for Python RAG stacks
 
-> Vote on features or propose new ones by [opening an issue](https://github.com/Sidd27/ragscope/issues).
+> Vote on features or propose new ones — [open an issue](https://github.com/Sidd27/ragscope/issues).
 
 ---
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code layout, and how to add a new ingestion adapter.
 
-**Good first issues:** LangSmith adapter, Helicone adapter, audit report export, improving scoring heuristics.
+Good first contributions: LangSmith adapter · Helicone adapter · audit report export · scoring heuristic improvements
 
 ---
 
 ## Privacy
 
-All data stays on your machine. No telemetry, no cloud, no accounts required.
+All trace data stays in memory on your machine. The only outbound network request RAGScope ever makes is the Langfuse poll — and only if you configure it with your own keys. No telemetry, no analytics, no accounts.
 
 ---
-
-## License
 
 [Apache 2.0](LICENSE) — © 2026 Siddharth Pandey

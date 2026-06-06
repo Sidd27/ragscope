@@ -4,7 +4,6 @@ import type { RagChunk } from '../types.js';
 
 function makeChunk(id: string, rank: number, content: string): RagChunk {
   return {
-    id,
     spanId: 's1',
     traceId: 't1',
     chunkId: id,
@@ -61,8 +60,8 @@ describe('annotateChunkBoundaries', () => {
     ];
     const result = annotateChunkBoundaries(chunks);
     const sorted = [...result].sort((x, y) => x.rankRetrieval! - y.rankRetrieval!);
-    expect(sorted[0].overlapWithNext).toBe(9); // "brown fox"
-    expect(sorted[1].overlapWithNext).toBe(4); // "over"
+    expect(sorted[0].overlapWithNext).toBeCloseTo(9 / 19); // "brown fox" / min(19,20)
+    expect(sorted[1].overlapWithNext).toBeCloseTo(4 / 17); // "over" / min(20,17)
     expect(sorted[2].overlapWithNext).toBe(0);
   });
 

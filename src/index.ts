@@ -1,2 +1,2 @@
 export { createApp } from './app.js';
-export { createDb } from './db/index.js';
+export { createStore } from './store/index.js';

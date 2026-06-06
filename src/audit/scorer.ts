@@ -76,7 +76,7 @@ function scoreRedundancy(chunks: RagChunk[]): SubScore {
   const withOverlap = chunks.filter((c) => c.overlapWithNext != null);
   if (withOverlap.length === 0) {
     return {
-      name: 'redundancy',
+      name: 'uniqueness',
       score: 100,
       symbol: '✓',
       finding: 'no overlap data',
@@ -87,7 +87,7 @@ function scoreRedundancy(chunks: RagChunk[]): SubScore {
   const score = Math.round((1 - avgOverlap) * 100);
   const highOverlap = withOverlap.filter((c) => c.overlapWithNext! > 0.8).length;
   return {
-    name: 'redundancy',
+    name: 'uniqueness',
     score,
     symbol: symbol(score),
     finding: highOverlap > 0 ? `${highOverlap} near-duplicate pairs` : 'chunks are distinct',

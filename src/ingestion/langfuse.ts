@@ -1,6 +1,6 @@
 import type { ParsedTrace, ParsedSpan, SpanKind, RetrievalDocument } from '../types.js';
-import type { Db } from '../db/index.js';
 import { ingestTrace } from '../enrichment/pipeline.js';
+import type { Store } from '../store/index.js';
 
 interface LangfuseConfig {
   publicKey: string;
@@ -64,13 +64,9 @@ function extractDocuments(obs: LangfuseObservation): RetrievalDocument[] | undef
     }));
 }
 
-function parseIsoToMs(iso: string): number {
-  return new Date(iso).getTime();
-}
-
 function observationToSpan(obs: LangfuseObservation, traceId: string): ParsedSpan {
-  const startMs = parseIsoToMs(obs.startTime);
-  const endMs = obs.endTime ? parseIsoToMs(obs.endTime) : startMs;
+  const startMs = new Date(obs.startTime).getTime();
+  const endMs = obs.endTime ? new Date(obs.endTime).getTime() : startMs;
   const docs = extractDocuments(obs);
   const inputText =
     typeof obs.input === 'string' ? obs.input : obs.input ? JSON.stringify(obs.input) : undefined;
@@ -87,7 +83,6 @@ function observationToSpan(obs: LangfuseObservation, traceId: string): ParsedSpa
     model: obs.model ?? undefined,
     inputTokens: obs.usage?.input ?? undefined,
     outputTokens: obs.usage?.output ?? undefined,
-    rawAttributes: '[]',
     documents: docs,
     prompt: inputText,
   };
@@ -100,19 +95,19 @@ export class LangfusePoller {
 
   constructor(config: LangfuseConfig) {
     this.config = config;
-    this.lastPolledAt = Date.now() - 5 * 60 * 1000; // look back 5 min on first poll
+    this.lastPolledAt = Date.now() - 5 * 60 * 1000;
   }
 
-  start(db: Db, onTrace?: (traceId: string) => void): void {
-    this.poll(db, onTrace).catch(console.error);
-    this.timer = setInterval(() => this.poll(db, onTrace).catch(console.error), 30_000);
+  start(store: Store, onTrace?: (traceId: string) => void): void {
+    this.poll(store, onTrace).catch(console.error);
+    this.timer = setInterval(() => this.poll(store, onTrace).catch(console.error), 30_000);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
   }
 
-  private async poll(db: Db, onTrace?: (traceId: string) => void): Promise<void> {
+  private async poll(store: Store, onTrace?: (traceId: string) => void): Promise<void> {
     const since = new Date(this.lastPolledAt).toISOString();
     const pollStart = Date.now();
 
@@ -143,7 +138,7 @@ export class LangfusePoller {
         serviceName: (trace.metadata?.['service.name'] as string | undefined) ?? 'langfuse',
         spans,
       };
-      await ingestTrace(db, parsed, 'langfuse');
+      ingestTrace(store, parsed, 'langfuse');
       onTrace?.(parsed.traceId);
     }
 

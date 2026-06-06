@@ -1,8 +1,6 @@
 import { models, Tokenizer } from 'ai-tokenizer';
 import * as encodings from 'ai-tokenizer/encoding';
 
-type ModelName = keyof typeof models;
-
 // Cache tokenizer instances by encoding name
 const tokenizerCache = new Map<string, Tokenizer>();
 

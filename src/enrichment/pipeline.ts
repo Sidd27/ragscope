@@ -1,11 +1,9 @@
-import { randomUUID } from 'crypto';
 import type { ParsedTrace, ParsedSpan, RagTrace, RagSpan, RagChunk } from '../types.js';
 import { normalizeScores } from './normalizer.js';
 import { countTokens } from './tokenizer.js';
 import { annotateChunkBoundaries } from './boundaries.js';
 import { applyRerankerResults } from './reranker.js';
-import { insertTrace, insertSpans, insertChunks } from '../db/queries.js';
-import type { Db } from '../db/index.js';
+import { upsertTrace, type Store } from '../store/index.js';
 
 function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[] {
   const llmPrompts = llmSpans.map((s) => s.prompt).filter((p): p is string => !!p);
@@ -22,11 +20,7 @@ function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[]
   });
 }
 
-export async function ingestTrace(
-  db: Db,
-  parsed: ParsedTrace,
-  source: RagTrace['source'],
-): Promise<void> {
+export function ingestTrace(store: Store, parsed: ParsedTrace, source: RagTrace['source']): void {
   const rootSpan = parsed.spans.find((s) => !s.parentSpanId) ?? parsed.spans[0];
   const allChunks: RagChunk[] = [];
   const ragSpans: RagSpan[] = [];
@@ -56,7 +50,6 @@ export async function ingestTrace(
         const content = nd.content ?? null;
 
         allChunks.push({
-          id: randomUUID(),
           spanId: span.spanId,
           traceId: span.traceId,
           chunkId: nd.id,
@@ -80,29 +73,27 @@ export async function ingestTrace(
   const llmSpans = parsed.spans.filter((s) => s.kind === 'LLM');
   const rerankerSpans = parsed.spans.filter((s) => s.kind === 'RERANKER');
   const withContext = assembleContext(allChunks, llmSpans);
-  const { chunks: withReranked } = applyRerankerResults(withContext, rerankerSpans);
+  const withReranked = applyRerankerResults(withContext, rerankerSpans);
   const withBoundaries = annotateChunkBoundaries(withReranked);
 
   const startTimes = parsed.spans.map((s) => s.startTimeMs);
   const endTimes = parsed.spans.map((s) => s.endTimeMs);
-  const minStart = Math.min(...startTimes);
-  const maxEnd = Math.max(...endTimes);
 
   const querySpan = parsed.spans.find((s) => s.kind === 'CHAIN' || s.kind === 'LLM');
-  const query = querySpan?.prompt ?? null;
 
-  const ragTrace: RagTrace = {
-    id: parsed.traceId,
-    serviceName: parsed.serviceName,
-    query,
-    source,
-    totalLatencyMs: maxEnd - minStart,
-    spanCount: parsed.spans.length,
-    chunkCount: withBoundaries.length,
-    createdAt: rootSpan?.startTimeMs ?? Date.now(),
-  };
-
-  await insertTrace(db, ragTrace);
-  await insertSpans(db, ragSpans);
-  await insertChunks(db, withBoundaries);
+  upsertTrace(
+    store,
+    {
+      id: parsed.traceId,
+      serviceName: parsed.serviceName,
+      query: querySpan?.prompt ?? null,
+      source,
+      totalLatencyMs: Math.max(...endTimes) - Math.min(...startTimes),
+      spanCount: parsed.spans.length,
+      chunkCount: withBoundaries.length,
+      createdAt: rootSpan?.startTimeMs ?? Date.now(),
+    },
+    ragSpans,
+    withBoundaries,
+  );
 }
