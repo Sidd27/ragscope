@@ -1,6 +1,6 @@
 {
   "name": "ragscope",
-  "version": "0.1.3",
+  "version": "0.3.0",
   "description": "Lighthouse for RAG — PASS/WARN/FAIL scores for your retrieval pipeline, straight in the terminal. Works with LangChain, LlamaIndex, Vercel AI SDK, Langfuse, and any OpenTelemetry source.",
   "keywords": [
     "rag",
