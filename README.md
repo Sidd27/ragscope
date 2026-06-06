@@ -78,7 +78,7 @@ Your RAG app  ──(OTLP/JSON)──▶  RAGScope :4321
                                       ▼
                               score the trace
                         (precision · efficiency ·
-                          redundancy · coverage)
+                          uniqueness · coverage)
                                       │
                                       ▼
                              print to terminal
@@ -119,8 +119,8 @@ Every trace gets a 0–100 score built from four sub-scores. The weights reflect
 **What a bad score looks like:**
 
 ```
-✗ precision:30
-→ Reduce TOP_K 10→3 (only 3 chunks reached LLM)
+│  ✗  precision    30  ███░░░░░░░  3/10 chunks used
+│  → Reduce TOP_K 10→3 (only 3 chunks reached LLM)
 ```
 
 ---
@@ -134,10 +134,9 @@ Every trace gets a 0–100 score built from four sub-scores. The weights reflect
 **What a bad score looks like:**
 
 ```
-✗ efficiency:45
+│  ✗  efficiency   45  ████░░░░░░  55% tokens wasted
+│  → 55% of retrieved tokens never reached the LLM
 ```
-
-55% of retrieved tokens were never seen by the model.
 
 ---
 
@@ -150,8 +149,8 @@ Every trace gets a 0–100 score built from four sub-scores. The weights reflect
 **What a bad score looks like:**
 
 ```
-~ uniqueness:60
-→ 2 near-duplicate chunks — deduplicate at ingest time
+│  ~  uniqueness   60  ██████░░░░  2 near-duplicate pairs
+│  → 2 near-duplicate chunks — deduplicate at ingest time
 ```
 
 ---
@@ -174,7 +173,7 @@ Every trace gets a 0–100 score built from four sub-scores. The weights reflect
 | 50–74 | **WARN** | Issues present — review recommendations |
 | < 50  | **FAIL** | Significant retrieval problems          |
 
-Run with `--verbose` for a per-score breakdown with specific tuning recommendations.
+The per-score breakdown with recommendations is shown by default. Use `--compact` for a single-line summary per query.
 
 ---
 
@@ -320,7 +319,7 @@ Think of it as the difference between a linter (runs in your editor while you co
 
 ## Roadmap
 
-### Current (v0.1.x)
+### Shipped (v0.3.0)
 
 - [x] OTLP ingestion — any OTel-compatible source
 - [x] Langfuse polling adapter
@@ -330,13 +329,15 @@ Think of it as the difference between a linter (runs in your editor while you co
 - [x] Four sub-scores: precision · efficiency · uniqueness · coverage
 - [x] Actionable recommendations per score (TOP_K sizing, deduplication, score logging)
 - [x] Rolling session average with trend indicator
+- [x] In-memory store — zero install overhead, no disk writes
+- [x] Redesigned CLI — verbose by default, score bars, ASCII banner, `--compact` flag
 
-### v0.2
+### Planned
 
 - [ ] **LangSmith adapter** — poll runs via LangSmith API, zero code changes
 - [ ] **Helicone adapter** — fetch requests via Helicone API
 - [ ] **Langfuse webhooks** — real-time instead of 30s polling
-- [ ] **Audit report** — `npx ragscope report` exports a Markdown/JSON summary of the session, shareable and committable
+- [ ] **Audit report** — `npx ragscope report` exports a Markdown/JSON summary of the session
 
 ### Later
 
