@@ -15,15 +15,30 @@ A local diagnostic tool for RAG pipelines. Scores every query your pipeline proc
 ---
 
 ```
- PASS  84/100  my-rag-app  "what is RAG?"
-       ✓ precision:90  ✓ efficiency:80  ✓ redundancy:85  ✓ coverage:100
+  PASS  90/100  █████████░  my-rag-app
+  │  "What is RAG?"
+  │
+  │  ✓  precision    90  █████████░  9/10 chunks used
+  │  ✓  efficiency   80  ████████░░  20% tokens wasted
+  │  ✓  uniqueness  100  ██████████  chunks are distinct
+  │  ✓  coverage    100  ██████████  all chunks scored
+  │
 
- WARN  61/100  my-rag-app  "what is dense passage retrieval?"
-       ✗ precision:30  ✗ efficiency:45  ~ uniqueness:70  ✓ coverage:100
-       → Reduce TOP_K 10→5 (only 5 chunks reached LLM)  · 2 near-duplicate chunks
+  WARN  54/100  █████░░░░░  my-rag-app
+  │  "What is dense passage retrieval?"
+  │
+  │  ✗  precision    40  ████░░░░░░  4/10 chunks used
+  │  ~  efficiency   50  █████░░░░░  50% tokens wasted
+  │  ~  uniqueness   65  ███████░░░  2 near-duplicate pairs
+  │  ✓  coverage    100  ██████████  all chunks scored
+  │
+  │  → Reduce TOP_K 10→4 (only 4 chunks reached LLM)
+  │  → 50% of retrieved tokens never reached the LLM
+  │  → 2 near-duplicate chunks — deduplicate at ingest time
+  │
 
- ────────────────────────────────────────────────────────────────
- Session  2 queries · avg 72/100 ↑
+  ──────────────────────────────────────────────────
+  Session  2 queries  ·  avg 72/100  ↓
 ```
 
 ---
