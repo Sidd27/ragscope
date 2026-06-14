@@ -347,7 +347,7 @@ Think of it as the difference between a linter (runs in your editor while you co
 
 ## Roadmap
 
-### Shipped (v0.3.0)
+### Shipped (v0.4.0)
 
 - [x] OTLP ingestion — any OTel-compatible source
 - [x] Langfuse polling adapter
