@@ -119,12 +119,67 @@ describe('ingestTrace', () => {
     expect(doc2.contextPosition).toBeNull();
   });
 
+  it('assigns contextPosition by textual order in the prompt, not retrieval order', () => {
+    const trace = makeTrace();
+    trace.spans[1].documents = [
+      { id: 'doc-1', score: 0.9, content: 'Alpha chunk content.' }, // retrieval rank 1
+      { id: 'doc-2', score: 0.7, content: 'Beta chunk content.' }, // retrieval rank 2
+    ];
+    trace.spans.push({
+      traceId: 'trace-pipeline-001',
+      spanId: 'span-llm',
+      parentSpanId: 'span-chain',
+      name: 'openai.chat',
+      kind: 'LLM',
+      startTimeMs: 1200,
+      endTimeMs: 1450,
+      latencyMs: 250,
+      // prompt places the rank-2 chunk BEFORE the rank-1 chunk
+      prompt: 'Context:\nBeta chunk content.\n\nAlpha chunk content.\n\nQuestion: ?',
+    });
+    ingestTrace(store, trace, 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
+    const doc1 = result!.chunks.find((c) => c.chunkId === 'doc-1')!;
+    const doc2 = result!.chunks.find((c) => c.chunkId === 'doc-2')!;
+    expect(doc2.contextPosition).toBe(0); // appears first in the prompt text
+    expect(doc1.contextPosition).toBe(1);
+  });
+
   it('leaves inContext=false when no LLM span has a prompt', () => {
     ingestTrace(store, makeTrace(), 'otlp');
     const result = getTraceById(store, 'trace-pipeline-001');
     for (const chunk of result!.chunks) {
       expect(chunk.inContext).toBe(false);
     }
+  });
+
+  it('does not create duplicate chunks from a reranker span', () => {
+    const trace = makeTrace(); // retriever has doc-1, doc-2
+    trace.spans.push({
+      traceId: 'trace-pipeline-001',
+      spanId: 'span-reranker',
+      parentSpanId: 'span-chain',
+      name: 'cohere.rerank',
+      kind: 'RERANKER',
+      startTimeMs: 1160,
+      endTimeMs: 1190,
+      latencyMs: 30,
+      operationName: 'rerank',
+      // same documents, reordered
+      documents: [
+        { id: 'doc-2', score: 0.95, content: 'France is a country in Europe.' },
+        { id: 'doc-1', score: 0.8, content: 'Paris is the capital of France.' },
+      ],
+    });
+    ingestTrace(store, trace, 'otlp');
+    const result = getTraceById(store, 'trace-pipeline-001');
+    // 2 retrieved chunks, NOT 4 (the reranker span must not spawn new chunks)
+    expect(result!.chunks).toHaveLength(2);
+    expect(result!.trace.chunkCount).toBe(2);
+    // reranker ranks are merged onto the existing retriever chunks
+    const doc1 = result!.chunks.find((c) => c.chunkId === 'doc-1')!;
+    expect(doc1.rankRetrieval).toBe(1);
+    expect(doc1.rankReranked).toBe(2);
   });
 
   it('sets overlapWithNext on chunks via boundary detection', () => {

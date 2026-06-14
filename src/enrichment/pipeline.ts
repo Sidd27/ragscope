@@ -9,15 +9,36 @@ function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[]
   const llmPrompts = llmSpans.map((s) => s.prompt).filter((p): p is string => !!p);
   if (llmPrompts.length === 0) return chunks;
 
-  let position = 0;
-  return chunks.map((chunk) => {
-    if (!chunk.content) return chunk;
-    const inContext = llmPrompts.some((p) => p.includes(chunk.content!));
-    if (inContext) {
-      return { ...chunk, inContext: true, contextPosition: position++ };
+  // First pass: mark in-context chunks and record where their content actually
+  // appears in the prompt (character offset). contextPosition must reflect the
+  // chunk's true textual placement, not its retrieval order — otherwise the
+  // lost-in-the-middle audit can never see a high-rank chunk buried mid-prompt.
+  const offsets = new Map<RagChunk, number>();
+  const marked = chunks.map((chunk) => {
+    if (!chunk.content) return { ...chunk, inContext: false, contextPosition: null };
+    let offset = -1;
+    for (const p of llmPrompts) {
+      const idx = p.indexOf(chunk.content);
+      if (idx !== -1) {
+        offset = idx;
+        break;
+      }
     }
-    return { ...chunk, inContext: false, contextPosition: null };
+    if (offset === -1) return { ...chunk, inContext: false, contextPosition: null };
+    const next = { ...chunk, inContext: true, contextPosition: null as number | null };
+    offsets.set(next, offset);
+    return next;
   });
+
+  // Second pass: assign contextPosition as the ordinal of each in-context chunk
+  // sorted by its prompt offset.
+  [...offsets.keys()]
+    .sort((a, b) => offsets.get(a)! - offsets.get(b)!)
+    .forEach((chunk, position) => {
+      chunk.contextPosition = position;
+    });
+
+  return marked;
 }
 
 export function ingestTrace(store: Store, parsed: ParsedTrace, source: RagTrace['source']): void {
@@ -42,7 +63,10 @@ export function ingestTrace(store: Store, parsed: ParsedTrace, source: RagTrace[
       outputTokens: span.outputTokens ?? null,
     });
 
-    if (span.documents && span.documents.length > 0) {
+    // Reranker spans carry the same documents reordered; their ranks are merged
+    // onto the retriever's chunks later by applyRerankerResults. Creating chunks
+    // from them here would double-count every document.
+    if (span.kind !== 'RERANKER' && span.documents && span.documents.length > 0) {
       const normalized = normalizeScores(span.documents, span.system);
 
       for (let rank = 0; rank < normalized.length; rank++) {

@@ -77,8 +77,8 @@ Your RAG app  ──(OTLP/JSON)──▶  RAGScope :4321
                      └────────────────┼─────────────────────┘
                                       ▼
                               score the trace
-                        (precision · efficiency ·
-                          uniqueness · coverage)
+                        (precision · efficiency · uniqueness
+                       · coverage · rerank gain when reranked)
                                       │
                                       ▼
                              print to terminal
@@ -106,21 +106,28 @@ No config files. No accounts. No data leaving your machine. Requires Node.js ≥
 
 ---
 
-## The four scores
+## The scores
 
-Every trace gets a 0–100 score built from four sub-scores. The weights reflect their practical impact on answer quality.
+Every trace gets a 0–100 score built from sub-scores weighted by their practical impact on answer quality. Four always apply; a fifth — **reranker gain** — is added only when the trace contains a reranker span. When it does, the weights renormalize automatically, so traces without a reranker score exactly as before.
 
 ### Retrieval Precision — 40%
 
-**What it measures:** The fraction of retrieved chunks that actually appeared in the LLM's prompt.
+**What it measures:** The fraction of retrieved chunks that actually appeared in the LLM's prompt — discounted when high-ranked chunks land in the dead middle of the prompt.
 
 **Why it's weighted highest:** A chunk that doesn't reach the LLM contributes nothing to the answer. It costs retrieval latency, vector store bandwidth, and context window space — and then gets silently dropped. If your pipeline retrieves 10 chunks and the LLM only sees 3, your TOP_K is more than 3× too high for this query.
+
+**Lost in the middle:** Reaching the prompt isn't enough — LLMs attend most to the start and end of a long context and under-use the middle. RAGScope reads each chunk's actual position in the prompt text. When a top-ranked chunk is buried in the middle ~50% of the context, precision takes a penalty, because that chunk is effectively wasted even though it "made it in."
 
 **What a bad score looks like:**
 
 ```
 │  ✗  precision    30  ███░░░░░░░  3/10 chunks used
 │  → Reduce TOP_K 10→3 (only 3 chunks reached LLM)
+```
+
+```
+│  ~  precision    64  ██████░░░░  8/8 chunks used · 3 buried mid-context
+│  → Move top-ranked chunks to the prompt edges — 3 high-rank chunks buried in the lost-in-the-middle zone
 ```
 
 ---
@@ -162,6 +169,27 @@ Every trace gets a 0–100 score built from four sub-scores. The weights reflect
 **Why it matters:** Without similarity scores you can't understand which chunks are the strongest matches, can't tune retrieval thresholds, and can't detect when your vector store is returning results in arbitrary order. This score is a signal flag, not a performance metric.
 
 **Common cause of zero scores:** Langfuse sometimes omits scores from trace exports. Chroma returns L2 distances — RAGScope normalizes those automatically, so they won't trigger this flag.
+
+---
+
+### Reranker Gain — 15% _(only when a reranker span is present)_
+
+**What it measures:** Whether your reranker actually pulled the chunks the LLM used toward the top. RAGScope compares each chunk's retrieval rank against its reranked rank, and measures the average rank improvement of the chunks that ended up in the prompt.
+
+**Why it matters:** A reranker adds latency and cost on every query. If it shuffles results but leaves the chunks the LLM actually uses buried — or demotes them — it's earning that cost for nothing. A high score means the reranker is surfacing what matters; a low score means it isn't, and the reordering may be hurting more than helping.
+
+**What the scores look like:**
+
+```
+│  ✓  rerank-gain  88  █████████░  used chunks promoted avg +3.0 ranks
+```
+
+```
+│  ✗  rerank-gain  25  ███░░░░░░░  used chunks demoted avg -2.0 ranks
+│  → Reranker is not surfacing the chunks the LLM actually uses
+```
+
+When this score is present, the weights renormalize to `precision 35% · efficiency 25% · rerank-gain 15% · uniqueness 15% · coverage 10%`.
 
 ---
 
@@ -326,7 +354,8 @@ Think of it as the difference between a linter (runs in your editor while you co
 - [x] Score normalization per vector store (Qdrant · Chroma · Pinecone · Weaviate)
 - [x] Context assembly detection — which chunks actually reached the LLM
 - [x] Reranker diff — before/after rank and score comparison
-- [x] Four sub-scores: precision · efficiency · uniqueness · coverage
+- [x] Sub-scores: precision · efficiency · uniqueness · coverage, plus reranker gain when a reranker span is present
+- [x] Position-aware precision — penalizes top-ranked chunks buried in the lost-in-the-middle zone
 - [x] Actionable recommendations per score (TOP_K sizing, deduplication, score logging)
 - [x] Rolling session average with trend indicator
 - [x] In-memory store — zero install overhead, no disk writes

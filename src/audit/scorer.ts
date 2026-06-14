@@ -22,6 +22,30 @@ function symbol(score: number): '✓' | '~' | '✗' {
   return '✗';
 }
 
+const BURIED_PENALTY_PER_CHUNK = 12;
+const BURIED_PENALTY_CAP = 36;
+
+// A chunk is "buried" when a high-retrieval-rank chunk lands in the
+// lost-in-the-middle zone of the assembled prompt — the central ~50% of
+// positions, where LLMs attend least. Edges (first/last 25%) are exempt.
+function countBuriedChunks(chunks: RagChunk[]): number {
+  const inContext = chunks
+    .filter((c) => c.inContext && c.contextPosition != null)
+    .sort((a, b) => a.contextPosition! - b.contextPosition!);
+  const n = inContext.length;
+  if (n <= 3) return 0; // no meaningful middle
+
+  const lo = Math.floor((n - 1) * 0.25);
+  const hi = Math.ceil((n - 1) * 0.75);
+  const highValueCutoff = Math.max(3, Math.ceil(chunks.length / 3));
+
+  return inContext.filter((c) => {
+    const inMiddle = c.contextPosition! > lo && c.contextPosition! < hi;
+    const highValue = c.rankRetrieval != null && c.rankRetrieval <= highValueCutoff;
+    return inMiddle && highValue;
+  }).length;
+}
+
 function scoreRetrieval(chunks: RagChunk[]): SubScore {
   if (chunks.length === 0) {
     return {
@@ -33,16 +57,29 @@ function scoreRetrieval(chunks: RagChunk[]): SubScore {
     };
   }
   const used = chunks.filter((c) => c.inContext).length;
-  const score = Math.round((used / chunks.length) * 100);
+  const base = Math.round((used / chunks.length) * 100);
+  const buried = countBuriedChunks(chunks);
+  const penalty = Math.min(buried * BURIED_PENALTY_PER_CHUNK, BURIED_PENALTY_CAP);
+  const score = Math.max(0, Math.min(100, base - penalty));
+
+  const finding =
+    buried > 0
+      ? `${used}/${chunks.length} chunks used · ${buried} buried mid-context`
+      : `${used}/${chunks.length} chunks used`;
+
+  let recommendation: string | null = null;
+  if (buried > 0) {
+    recommendation = `Move top-ranked chunks to the prompt edges — ${buried} high-rank chunk${buried > 1 ? 's' : ''} buried in the lost-in-the-middle zone`;
+  } else if (base < 60) {
+    recommendation = `Reduce TOP_K ${chunks.length}→${Math.max(used, 3)} (only ${used} chunks reached LLM)`;
+  }
+
   return {
     name: 'precision',
     score,
     symbol: symbol(score),
-    finding: `${used}/${chunks.length} chunks used`,
-    recommendation:
-      score < 60
-        ? `Reduce TOP_K ${chunks.length}→${Math.max(used, 3)} (only ${used} chunks reached LLM)`
-        : null,
+    finding,
+    recommendation,
   };
 }
 
@@ -120,6 +157,37 @@ function scoreCoverage(chunks: RagChunk[]): SubScore {
   };
 }
 
+// Effectiveness of the reranker stage: did it pull the chunks the LLM
+// actually used toward the top? Average rank improvement of used chunks,
+// mapped so neutral (no movement) = 50, +4 ranks = 100, −4 ranks = 0.
+function scoreRerank(chunks: RagChunk[]): SubScore {
+  const reranked = chunks.filter((c) => c.rankReranked != null && c.rankRetrieval != null);
+  const usedReranked = reranked.filter((c) => c.inContext);
+  const sample = usedReranked.length > 0 ? usedReranked : reranked;
+
+  const avgImprovement =
+    sample.reduce((n, c) => n + (c.rankRetrieval! - c.rankReranked!), 0) / sample.length;
+  const score = Math.max(0, Math.min(100, Math.round(50 + avgImprovement * 12.5)));
+
+  let finding: string;
+  if (avgImprovement > 0.5) {
+    finding = `used chunks promoted avg +${avgImprovement.toFixed(1)} ranks`;
+  } else if (avgImprovement < -0.5) {
+    finding = `used chunks demoted avg ${avgImprovement.toFixed(1)} ranks`;
+  } else {
+    finding = 'reranker left used chunks in place';
+  }
+
+  return {
+    name: 'rerank-gain',
+    score,
+    symbol: symbol(score),
+    finding,
+    recommendation:
+      score < 60 ? 'Reranker is not surfacing the chunks the LLM actually uses' : null,
+  };
+}
+
 export function scoreTrace(
   serviceName: string,
   query: string | null,
@@ -130,10 +198,31 @@ export function scoreTrace(
   const efficiency = scoreEfficiency(chunks);
   const redundancy = scoreRedundancy(chunks);
   const coverage = scoreCoverage(chunks);
+  const hasReranker = chunks.some((c) => c.rankReranked != null);
 
-  const overall = Math.round(
-    precision.score * 0.4 + efficiency.score * 0.3 + redundancy.score * 0.2 + coverage.score * 0.1,
-  );
+  let overall: number;
+  let subscores: SubScore[];
+
+  if (hasReranker) {
+    const rerank = scoreRerank(chunks);
+    overall = Math.round(
+      precision.score * 0.35 +
+        efficiency.score * 0.25 +
+        rerank.score * 0.15 +
+        redundancy.score * 0.15 +
+        coverage.score * 0.1,
+    );
+    subscores = [precision, efficiency, rerank, redundancy, coverage];
+  } else {
+    overall = Math.round(
+      precision.score * 0.4 +
+        efficiency.score * 0.3 +
+        redundancy.score * 0.2 +
+        coverage.score * 0.1,
+    );
+    subscores = [precision, efficiency, redundancy, coverage];
+  }
+
   const label: AuditResult['label'] = overall >= 75 ? 'PASS' : overall >= 50 ? 'WARN' : 'FAIL';
 
   return {
@@ -141,6 +230,6 @@ export function scoreTrace(
     label,
     query,
     serviceName,
-    subscores: [precision, efficiency, redundancy, coverage],
+    subscores,
   };
 }
