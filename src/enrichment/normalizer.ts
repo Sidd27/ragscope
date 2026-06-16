@@ -1,6 +1,6 @@
 import type { RetrievalDocument } from '../types.js';
 
-export type VectorStore = 'qdrant' | 'pinecone' | 'chroma' | 'weaviate' | 'unknown';
+type VectorStore = 'qdrant' | 'pinecone' | 'chroma' | 'weaviate' | 'unknown';
 
 function detectStore(system: string | undefined): VectorStore {
   const s = system?.toLowerCase() ?? '';

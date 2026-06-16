@@ -9,13 +9,12 @@ function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[]
   const llmPrompts = llmSpans.map((s) => s.prompt).filter((p): p is string => !!p);
   if (llmPrompts.length === 0) return chunks;
 
-  // First pass: mark in-context chunks and record where their content actually
-  // appears in the prompt (character offset). contextPosition must reflect the
-  // chunk's true textual placement, not its retrieval order — otherwise the
-  // lost-in-the-middle audit can never see a high-rank chunk buried mid-prompt.
-  const offsets = new Map<RagChunk, number>();
-  const marked = chunks.map((chunk) => {
-    if (!chunk.content) return { ...chunk, inContext: false, contextPosition: null };
+  // Build (chunk, promptOffset) pairs; contextPosition must reflect textual
+  // placement in the prompt, not retrieval order, so the lost-in-the-middle
+  // audit sees where high-rank chunks actually land.
+  const withOffsets = chunks.map((chunk) => {
+    if (!chunk.content)
+      return { chunk: { ...chunk, inContext: false, contextPosition: null }, offset: -1 };
     let offset = -1;
     for (const p of llmPrompts) {
       const idx = p.indexOf(chunk.content);
@@ -24,21 +23,21 @@ function assembleContext(chunks: RagChunk[], llmSpans: ParsedSpan[]): RagChunk[]
         break;
       }
     }
-    if (offset === -1) return { ...chunk, inContext: false, contextPosition: null };
-    const next = { ...chunk, inContext: true, contextPosition: null as number | null };
-    offsets.set(next, offset);
-    return next;
+    return {
+      chunk: { ...chunk, inContext: offset !== -1, contextPosition: null as number | null },
+      offset,
+    };
   });
 
-  // Second pass: assign contextPosition as the ordinal of each in-context chunk
-  // sorted by its prompt offset.
-  [...offsets.keys()]
-    .sort((a, b) => offsets.get(a)! - offsets.get(b)!)
-    .forEach((chunk, position) => {
-      chunk.contextPosition = position;
+  // Assign ordinal contextPosition by sorting in-context chunks by prompt offset.
+  withOffsets
+    .filter((x) => x.offset !== -1)
+    .sort((a, b) => a.offset - b.offset)
+    .forEach((x, i) => {
+      x.chunk.contextPosition = i;
     });
 
-  return marked;
+  return withOffsets.map((x) => x.chunk);
 }
 
 export function ingestTrace(store: Store, parsed: ParsedTrace, source: RagTrace['source']): void {

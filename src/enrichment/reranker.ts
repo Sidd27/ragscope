@@ -7,20 +7,13 @@ export function applyRerankerResults(chunks: RagChunk[], rerankerSpans: ParsedSp
   const span = rerankerSpans[0];
   if (!span.documents || span.documents.length === 0) return chunks;
 
-  const rerankedRank = new Map<string, number>();
-  const rerankedScore = new Map<string, number>();
-  span.documents.forEach((doc, i) => {
-    rerankedRank.set(doc.id, i + 1);
-    rerankedScore.set(doc.id, doc.score);
-  });
+  const reranked = new Map(
+    span.documents.map((doc, i) => [doc.id, { rank: i + 1, score: doc.score }]),
+  );
 
   return chunks.map((chunk) => {
-    const newRank = rerankedRank.get(chunk.chunkId);
-    if (newRank == null) return chunk;
-    return {
-      ...chunk,
-      rankReranked: newRank,
-      scoreReranked: rerankedScore.get(chunk.chunkId) ?? null,
-    };
+    const r = reranked.get(chunk.chunkId);
+    if (r == null) return chunk;
+    return { ...chunk, rankReranked: r.rank, scoreReranked: r.score };
   });
 }
